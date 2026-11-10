@@ -1,17 +1,21 @@
 import Combine
 import Foundation
 
-/// 全 App 唯一的「发现新版本」弹窗状态。
+/// 全 App 唯一的「发现新版本」状态。
 ///
-/// 冷启动自动检查与设置页手动检查共用同一个入口，避免两处 `.alert` 互相覆盖。
+/// 冷启动自动检查与设置页手动检查共用同一个入口，避免两处弹窗互相覆盖。
 /// 自动检查与 Android `AppNavHost` 的 `check(fromUser = false)` 对齐：
 /// 失败、已是最新版本一律静默，只有确实发现新版本才弹窗。
+///
+/// 【强制更新】一旦 present，本次 App 进程内不再清除 info：
+/// ContentView 用 fullScreenCover 全屏呈现，且忽略所有关闭请求，
+/// 点按钮只负责跳浏览器，回到 App 仍然是这个页面。
 final class UpdatePrompt: ObservableObject {
     static let shared = UpdatePrompt()
 
     private init() {}
 
-    /// 非空即弹窗；弹窗关闭时由 ContentView 写回 nil。
+    /// 非空即弹窗。强制更新：不提供任何清除入口，只有进程重启后重新检查才可能变化。
     @Published var info: AppUpdateInfo?
 
     /// 一次 App 启动只自动检查一次：门禁重新核验、视图重建都不会重复请求。

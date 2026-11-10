@@ -1,11 +1,13 @@
 import Foundation
 
 /// 服务端 update.json 里与本端有关的信息。
-/// downloadURL 完全来自接口，客户端不内置任何下载地址。
+/// downloadURL 完全来自接口，客户端不内置任何下载地址；且只在点击按钮时使用，不展示给用户。
 struct AppUpdateInfo {
     let versionName: String
     let versionCode: Int
     let downloadURL: String
+    /// 更新日志：强制更新弹窗里唯一展示的内容
+    let changelog: String
 }
 
 enum UpdateCheckResult {
@@ -64,28 +66,36 @@ final class UpdateService {
         guard let address, address.hasPrefix("http://") || address.hasPrefix("https://") else {
             return nil
         }
+        let changelog = firstString(
+            node,
+            ["changelog", "changeLog", "change_log", "updateLog", "desc", "description"]
+        ) ?? ""
+
         return AppUpdateInfo(
             versionName: versionName,
             versionCode: versionCode,
-            downloadURL: address
+            downloadURL: address,
+            changelog: changelog
         )
     }
 
-    /// 版本号优先按 versionName 逐段比较；接口只给 versionCode 时按 code 比较。
+    /// 版本号优先按 versionName 逐段比较；本机 plist 读不到时按 versionCode 比较。
+    /// 【注意】这里不能写死兜底版本号，否则每次升版本都会漏改、导致"永远判断为已最新"。
     private static func isNewer(_ info: AppUpdateInfo) -> Bool {
         let localName = Bundle.main.object(
             forInfoDictionaryKey: "CFBundleShortVersionString"
-        ) as? String ?? "1.0.23"
+        ) as? String ?? ""
         let localCode = Int(
             Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
         ) ?? 0
 
-        if compareVersion(info.versionName, localName) == .orderedDescending { return true }
-        if !info.versionName.isEmpty { return false }
+        if !info.versionName.isEmpty, !localName.isEmpty {
+            return compareVersion(info.versionName, localName) == .orderedDescending
+        }
         return info.versionCode > 0 && localCode > 0 && info.versionCode > localCode
     }
 
-    /// "1.0.24" > "1.0.23"；段数不足补 0，非数字段忽略。
+    /// 逐段比较，段数不足补 0，非数字段忽略。
     private static func compareVersion(_ a: String, _ b: String) -> ComparisonResult {
         let left = a.split(separator: ".").compactMap { Int(String($0)) }
         let right = b.split(separator: ".").compactMap { Int(String($0)) }

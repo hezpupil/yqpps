@@ -262,8 +262,7 @@ fun AppNavHost() {
         updateState.available?.let { info ->
             UpdateFoundDialog(
                 info = info,
-                onConfirm = updateVm::downloadAndInstall,
-                onDismiss = updateVm::dismiss
+                onConfirm = updateVm::downloadAndInstall
             )
         }
     }

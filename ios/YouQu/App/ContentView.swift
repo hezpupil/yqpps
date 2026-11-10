@@ -34,23 +34,19 @@ struct ContentView: View {
         }
         .oledBackground()
         .task { await runGate() }
-        // 全 App 唯一的更新弹窗：地址完全来自 update.json，点「前往下载」才交给浏览器
-        .alert(
-            "发现新版本",
+        // 全 App 唯一的【强制更新页】：内容只有更新日志 + 一个跳转按钮，不显示下载地址。
+        // fullScreenCover + 忽略 set(false) + interactiveDismissDisabled：
+        // 返回、点外部、下滑、"稍后再说" 全部不存在，浏览器回来后页面仍在。
+        .fullScreenCover(
             isPresented: Binding(
                 get: { updatePrompt.info != nil },
-                set: { shown in if !shown { updatePrompt.info = nil } }
-            ),
-            presenting: updatePrompt.info
-        ) { info in
-            Button("前往下载") {
-                guard let url = URL(string: info.downloadURL) else { return }
-                UIApplication.shared.open(url, options: [:], completionHandler: nil)
+                set: { _ in }   // 强制更新：忽略一切关闭请求
+            )
+        ) {
+            if let info = updatePrompt.info {
+                UpdateRequiredView(info: info)
+                    .interactiveDismissDisabled(true)
             }
-            Button("稍后再说", role: .cancel) { }
-        } message: { info in
-            let label = info.versionName.isEmpty ? "新版本" : info.versionName
-            Text("发现 \(label)\n下载地址：\(info.downloadURL)\n点击「前往下载」将在浏览器中打开。")
         }
     }
 

@@ -68,12 +68,9 @@ class UpdateViewModel(
         }
     }
 
-    /** 关掉更新提示（非强制更新时可用） */
-    fun dismiss() {
-        _state.update { it.copy(available = null) }
-    }
-
-    /** 下载并安装。未获得「安装未知应用」授权时先跳设置页 */
+    /** 下载并安装。未获得「安装未知应用」授权时先跳设置页。
+     *  强制更新下成功也不清除 available —— 用户在安装界面按返回后弹窗会重新出现，
+     *  不能借此跳过更新。 */
     fun downloadAndInstall() {
         val info = _state.value.available ?: return
         viewModelScope.launch {
@@ -83,7 +80,8 @@ class UpdateViewModel(
                     _state.update { it.copy(progress = percent) }
                 }
             }.onSuccess { file ->
-                _state.update { it.copy(progress = null, available = null) }
+                // 保留 available：安装界面被取消后强制更新弹窗仍在
+                _state.update { it.copy(progress = null) }
                 installOrRequestPermission(file)
             }.onFailure { e ->
                 _state.update {

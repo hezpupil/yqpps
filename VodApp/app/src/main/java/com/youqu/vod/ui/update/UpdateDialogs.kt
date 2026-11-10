@@ -24,25 +24,24 @@ import com.youqu.vod.ui.theme.TextPrimary
 import com.youqu.vod.ui.theme.TextSecondary
 import com.youqu.vod.ui.theme.TextTertiary
 
-/** 体积（字节）转成 MB 展示文案，0 表示服务端未提供 */
-private fun formatSize(bytes: Long): String? {
-    if (bytes <= 0) return null
-    return "%.1f MB".format(bytes / 1024.0 / 1024.0)
-}
-
-/** 发现新版本 */
+/**
+ * 发现新版本 —— 【强制更新，不允许取消】。
+ *
+ * - 返回键、点弹窗外、「稍后再说」全部不生效 / 不存在；
+ * - 正文只展示更新日志（与 iOS 一致），不展示下载地址、安装包大小等内部信息；
+ * - 只保留一个「立即更新」按钮。
+ * 配合 UpdateViewModel 在下载完成后仍保留 available，用户在安装界面按返回也绕不过去。
+ */
 @Composable
 fun UpdateFoundDialog(
     info: UpdateInfo,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit
+    onConfirm: () -> Unit
 ) {
     AlertDialog(
-        onDismissRequest = { if (!info.force) onDismiss() },
-        // 强制更新时不允许点外面或返回键取消
+        onDismissRequest = { /* 强制更新：忽略所有关闭请求 */ },
         properties = DialogProperties(
-            dismissOnBackPress = !info.force,
-            dismissOnClickOutside = !info.force
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false
         ),
         shape = RoundedCornerShape(16.dp),
         containerColor = SurfaceDark2,
@@ -57,44 +56,30 @@ fun UpdateFoundDialog(
         },
         text = {
             Column {
-                val size = formatSize(info.size)
-                if (size != null) {
-                    Text(text = "安装包大小：$size", fontSize = 13.sp, color = TextTertiary)
-                }
-                if (info.changelog.isNotBlank()) {
-                    Text(
-                        text = info.changelog,
-                        fontSize = 13.sp,
-                        lineHeight = 20.sp,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                }
-                if (info.force) {
-                    Text(
-                        text = "该版本为重要更新，需要升级后才能继续使用",
-                        fontSize = 12.sp,
-                        color = AccentOrange,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                }
+                Text(
+                    text = if (info.changelog.isNotBlank()) info.changelog
+                    else "本次更新包含体验优化与问题修复。",
+                    fontSize = 13.sp,
+                    lineHeight = 20.sp
+                )
+                Text(
+                    text = "请更新后继续使用",
+                    fontSize = 12.sp,
+                    color = AccentOrange,
+                    modifier = Modifier.padding(top = 10.dp)
+                )
             }
         },
         confirmButton = {
             TextButton(onClick = onConfirm) {
                 Text("立即更新", color = AccentOrange, fontSize = 14.sp)
             }
-        },
-        dismissButton = {
-            if (!info.force) {
-                TextButton(onClick = onDismiss) {
-                    Text("稍后再说", color = TextTertiary, fontSize = 14.sp)
-                }
-            }
         }
+        // 刻意不提供 dismissButton：不允许「稍后再说」
     )
 }
 
-/** 下载进度 */
+/** 下载进度：同样不可取消 */
 @Composable
 fun DownloadProgressDialog(progress: Int) {
     Dialog(
