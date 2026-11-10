@@ -31,8 +31,8 @@ jobs:
                 ../VodApp/app/build.gradle.kts | head -1)
           CODE=$(sed -nE 's/^val appVersionCode[[:space:]]*=[[:space:]]*([0-9]+).*/\1/p' \
                 ../VodApp/app/build.gradle.kts | head -1)
-          [ -n "$VER" ] || VER="1.0.22"
-          [ -n "$CODE" ] || CODE="27"
+          [ -n "$VER" ] || VER="1.0.23"
+          [ -n "$CODE" ] || CODE="28"
           echo "iOS build version: $VER ($CODE)"
           # 直接写源 Info.plist：xcodebuild 命令行传 MARKETING_VERSION 时，
           # Xcode 16 的 infoPlistUtility 不会把它展开到 $(MARKETING_VERSION)，

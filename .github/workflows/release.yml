@@ -1,28 +1,21 @@
-name: Release (CI 构建产物)
+name: Build & Upload (CI 构建产物)
 
 # 唯一发布出口：Android APK 与 iOS 未签名 IPA 全部由 CI 现场编译，
 # 不接受任何本地编译产物上传。
-# push 到 main 即自动「编译两端 + 发版」，无需再手动跑一次 Release；
-# 也可 workflow_dispatch 手动指定 tag。两端子 workflow 不再单独响应 push，
-# 因此每次 push 只编译一遍。
-# 产物命名：youqu-<版本>.apk / youqu-<版本>.ipa。
-# Release 只放两个安装包原文件，不发布 update.json（服务端更新接口由部署方自行维护）。
-# 服务器下载路径约定：
-#   https://yq-app.yqnb.lol/app/apk/youqu-<版本>.apk
-#   https://yq-app.yqnb.lol/app/ipa/youqu-<版本>.ipa
+#
+# 【不发布 GitHub Releases】新仓库是公共仓库，Release 会被任何人下载，
+# 因此编译完成后只把三个文件用私有上传密钥推到自有服务器：
+#   youqu-<版本>.apk  -> /app/apk/
+#   youqu-<版本>.ipa  -> /app/ipa/
+#   update.json       -> 站点根目录（size 按本次 APK 实际字节数自动回填）
+# 服务端接收脚本：web/web/upload.php（部署到站点根目录 /upload.php），
+# 密钥存放在 GitHub Actions secret `UPLOAD_KEY`，绝不写入代码。
+# 同时两个包仍作为 Actions artifacts 保留，登录 GitHub 后可从运行页下载。
+#
+# push 到 main 即自动「编译两端 + 上传」，也可 workflow_dispatch 手动触发；
+# 两端子 workflow 不单独响应 push，因此每次 push 只编译一遍。
 on:
   workflow_dispatch:
-    inputs:
-      tag:
-        description: '发布标签，留空则自动取 v<appVersionName>（例如 v1.0.22）'
-        required: false
-        default: ''
-        type: string
-      notes:
-        description: '更新说明'
-        required: false
-        default: 'GitHub Actions CI 构建产物'
-        type: string
   push:
     branches: [main]
     paths:
@@ -31,7 +24,8 @@ on:
       - '.github/workflows/**'
 
 permissions:
-  contents: write
+  contents: read
+  actions: read
 
 jobs:
   android:
@@ -41,11 +35,11 @@ jobs:
   ios:
     uses: ./.github/workflows/ios.yml
 
-  publish:
+  upload:
     needs: [android, ios]
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout (读取版本号)
+      - name: Checkout (读取 update.json 模板)
         uses: actions/checkout@v4
 
       - name: Download all build artifacts
@@ -54,45 +48,51 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: Normalize release assets
+      - name: Verify installers
         run: |
           set -e
-          # merge-multiple 平铺后只保留真正的安装包。
-          # Release 资产是原文件（.apk / .ipa），不像 artifact 下载那样被包成 zip。
+          # merge-multiple 平铺后只保留真正的安装包原文件。
           find dist -type f ! -name "*.apk" ! -name "*.ipa" -delete || true
-          echo "=== Release 资产（原始文件，可直接下载）==="
+          echo "=== 待上传安装包 ==="
           ls -lh dist
           test -n "$(find dist -maxdepth 1 -type f -name '*.apk' -print -quit)"
           test -n "$(find dist -maxdepth 1 -type f -name '*.ipa' -print -quit)"
 
-      - name: Create or update GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          INPUT_TAG: ${{ inputs.tag }}
-          INPUT_NOTES: ${{ inputs.notes }}
+      - name: Build update.json (回填 APK 实际大小)
         run: |
           set -e
-          # push 触发时没有 inputs，tag 直接从 appVersionName 推导，保证一次推送即可发版
-          if [ -n "$INPUT_TAG" ]; then
-            TAG="$INPUT_TAG"
-          else
-            VER=$(sed -nE 's/^val appVersionName[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' \
-                  VodApp/app/build.gradle.kts | head -1)
-            TAG="v${VER:-0}"
+          APK=$(find dist -maxdepth 1 -type f -name '*.apk' -print -quit)
+          SIZE=$(wc -c < "$APK" | tr -d ' ')
+          python3 - "$SIZE" <<'PY'
+          import json, pathlib, sys
+          src = pathlib.Path("VodApp/tools/update.json")
+          data = json.loads(src.read_text(encoding="utf-8"))
+          data["size"] = int(sys.argv[1])
+          out = pathlib.Path("dist/update.json")
+          out.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          print("生成的 update.json：", json.dumps(data, ensure_ascii=False))
+          PY
+
+      - name: Upload to private server
+        env:
+          UPLOAD_KEY: ${{ secrets.UPLOAD_KEY }}
+        run: |
+          set -e
+          if [ -z "$UPLOAD_KEY" ]; then
+            echo "::error::缺少 UPLOAD_KEY secret，无法上传"
+            exit 1
           fi
-          NOTES="${INPUT_NOTES:-GitHub Actions CI 构建产物}"
-          echo "TAG=$TAG"
-          # 同一版本多次 push 时覆盖资产，而不是让 release create 报错失败
-          # 只上传两个安装包，不发布 update.json 或其他元数据文件
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Release $TAG 已存在，覆盖上传资产"
-            gh release upload "$TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"
-          else
-            gh release create "$TAG" dist/* \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "$TAG" \
-              --notes "$NOTES"
-          fi
-          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
-            --json tagName,url,assets \
-            --jq '"发布完成: \(.tagName) \(.url)", (.assets[]? | "  asset: \(.name) \(.size)B")'
+          for f in dist/*.apk dist/*.ipa dist/update.json; do
+            [ -f "$f" ] || continue
+            echo "上传 $f ($(wc -c < "$f" | tr -d ' ') bytes)"
+            resp=$(curl -fsS --retry 3 --retry-delay 5 --max-time 300 \
+              -H "X-Upload-Key: $UPLOAD_KEY" \
+              -F "file=@${f}" \
+              "https://yq-app.yqnb.lol/upload.php")
+            echo "$resp"
+            echo "$resp" | grep -Eq '"ok"[[:space:]]*:[[:space:]]*true' || {
+              echo "::error::上传未成功: $f"
+              exit 1
+            }
+          done
+          echo "=== 已上传 APK / IPA / update.json，全程未创建 GitHub Release ==="

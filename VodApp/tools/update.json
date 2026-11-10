@@ -1,9 +1,9 @@
 {
-  "versionCode": 27,
-  "versionName": "1.0.22",
-  "apkUrl": "https://yq-app.yqnb.lol/app/apk/youqu-1.0.22.apk",
-  "iosUrl": "https://yq-app.yqnb.lol/app/ipa/youqu-1.0.22.ipa",
-  "changelog": "1.0.22 更新说明：\n· 播放器支持左右滑动快进快退、长按 2 倍速、iOS 横屏全屏\n· 设置页搜索记录与播放记录可点击重新搜索/播放\n· iOS 检查更新改为弹窗确认后在浏览器打开下载地址\n· 两端图标与应用名称统一为「友趣」",
+  "versionCode": 28,
+  "versionName": "1.0.23",
+  "apkUrl": "https://yq-app.yqnb.lol/app/apk/youqu-1.0.23.apk",
+  "iosUrl": "https://yq-app.yqnb.lol/app/ipa/youqu-1.0.23.ipa",
+  "changelog": "1.0.23 更新说明：\n· 两端列表封面改为视口懒加载，加载中显示默认小动图占位\n· 播放时封面回源自动让路，减少抢占播放带宽\n· 封面增加内存缓存，来回滚动不再重复下载\n· iOS 启动时自动检查更新",
   "force": false,
   "size": 17101902
 }

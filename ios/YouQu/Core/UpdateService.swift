@@ -75,7 +75,7 @@ final class UpdateService {
     private static func isNewer(_ info: AppUpdateInfo) -> Bool {
         let localName = Bundle.main.object(
             forInfoDictionaryKey: "CFBundleShortVersionString"
-        ) as? String ?? "1.0.22"
+        ) as? String ?? "1.0.23"
         let localCode = Int(
             Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
         ) ?? 0
@@ -85,7 +85,7 @@ final class UpdateService {
         return info.versionCode > 0 && localCode > 0 && info.versionCode > localCode
     }
 
-    /// "1.0.23" > "1.0.22"；段数不足补 0，非数字段忽略。
+    /// "1.0.24" > "1.0.23"；段数不足补 0，非数字段忽略。
     private static func compareVersion(_ a: String, _ b: String) -> ComparisonResult {
         let left = a.split(separator: ".").compactMap { Int(String($0)) }
         let right = b.split(separator: ".").compactMap { Int(String($0)) }
