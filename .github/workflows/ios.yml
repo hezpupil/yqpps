@@ -1,0 +1,119 @@
+name: iOS CI
+
+on:
+  workflow_dispatch:   # 只单独编译 iOS 时手动触发
+  workflow_call:       # 由 release.yml 复用
+  # 刻意不配 push：push 到 main 统一由 release.yml 触发，
+  # 避免重复编译（私有仓库 macOS runner 按 10 倍计费）。
+
+jobs:
+  build-ipa:
+    # 产物文件名统一为 youqu-<版本>.ipa，与服务器 /app/ipa/ 下的文件名一致。
+    # 注意：包本身仍是未签名的（CODE_SIGNING_ALLOWED=NO），只是文件名不再带 -unsigned；
+    # 全程不使用任何签名证书 / 描述文件 secrets。
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Build (unsigned)
+        working-directory: ios
+        run: |
+          # 版本号以 Android gradle 为唯一真相源，避免 iOS 设置页显示陈旧版本
+          VER=$(sed -nE 's/^val appVersionName[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' \
+                ../VodApp/app/build.gradle.kts | head -1)
+          CODE=$(sed -nE 's/^val appVersionCode[[:space:]]*=[[:space:]]*([0-9]+).*/\1/p' \
+                ../VodApp/app/build.gradle.kts | head -1)
+          [ -n "$VER" ] || VER="1.0.22"
+          [ -n "$CODE" ] || CODE="27"
+          echo "iOS build version: $VER ($CODE)"
+          # 直接写源 Info.plist：xcodebuild 命令行传 MARKETING_VERSION 时，
+          # Xcode 16 的 infoPlistUtility 不会把它展开到 $(MARKETING_VERSION)，
+          # 会导致包里版本号停在 1.0。这里以 gradle 为准显式覆盖。
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VER" YouQu/Resources/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $CODE" YouQu/Resources/Info.plist
+          echo "Info.plist: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' YouQu/Resources/Info.plist) ($(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' YouQu/Resources/Info.plist))"
+          xcodebuild \
+            -project YouQu.xcodeproj \
+            -scheme YouQu \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            clean build
+
+          # Xcode 16 的 ProcessInfoPlistFile 会按 build settings 重写 Info.plist，
+          # 源 plist 里的自定义键（显示名 / ATS 例外 / 屏幕方向 / LaunchScreen）不会带进 app 包。
+          # 打包前直接把这些键写回构建产物，保证最终 IPA 的名称与本机代理可用。
+          python3 - <<'PY'
+          import pathlib, plistlib
+
+          p = pathlib.Path("build/Build/Products/Release-iphoneos/YouQu.app/Info.plist")
+          d = plistlib.loads(p.read_bytes())
+          d["CFBundleDisplayName"] = "友趣"
+          d["CFBundleName"] = "友趣"
+          d["CFBundleDevelopmentRegion"] = "zh_CN"
+          d["LSRequiresIPhoneOS"] = True
+          d["ITSAppUsesNonExemptEncryption"] = False
+          d["UILaunchScreen"] = {}
+          d["UISupportedInterfaceOrientations"] = [
+              "UIInterfaceOrientationPortrait",
+              "UIInterfaceOrientationLandscapeLeft",
+              "UIInterfaceOrientationLandscapeRight",
+          ]
+          d["UISupportedInterfaceOrientations~ipad"] = [
+              "UIInterfaceOrientationPortrait",
+              "UIInterfaceOrientationPortraitUpsideDown",
+              "UIInterfaceOrientationLandscapeLeft",
+              "UIInterfaceOrientationLandscapeRight",
+          ]
+          # 播放走 http://127.0.0.1:{port} 本机网关，ATS 必须放行回环地址
+          d["NSAppTransportSecurity"] = {
+              "NSExceptionDomains": {
+                  "127.0.0.1": {
+                      "NSExceptionAllowsInsecureHTTPLoads": True,
+                      "NSIncludesSubdomains": False,
+                  }
+              }
+          }
+          p.write_bytes(plistlib.dumps(d, fmt=plistlib.FMT_BINARY))
+          print("Info.plist 已写回:",
+                d["CFBundleDisplayName"], d["CFBundleShortVersionString"],
+                "ATS:", "NSAppTransportSecurity" in d)
+          PY
+
+      - name: Package IPA
+        id: ipa
+        working-directory: ios
+        run: |
+          set -e
+          rm -rf Payload dist
+          mkdir -p Payload dist
+          cp -r build/Build/Products/Release-iphoneos/YouQu.app Payload/
+          # 与 Android 共用同一版本号，命名规则同为 youqu-<版本>.<扩展名>，
+          # 服务器目标：https://yq-app.yqnb.lol/app/ipa/youqu-<版本>.ipa
+          VER=$(sed -nE 's/^val appVersionName[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' \
+                ../VodApp/app/build.gradle.kts | head -1)
+          [ -n "$VER" ] || VER="release"
+          OUT="youqu-${VER}.ipa"
+          zip -qr "dist/$OUT" Payload
+          echo "name=$OUT" >> "$GITHUB_OUTPUT"
+          echo "IPA: ios/dist/$OUT ($(wc -c < "dist/$OUT" | tr -d ' ') bytes)"
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          # artifact 名与真实文件名一致，都带 .ipa 扩展名。
+          name: ${{ steps.ipa.outputs.name }}
+          path: ios/dist/${{ steps.ipa.outputs.name }}
+          if-no-files-found: error
+          compression-level: 0

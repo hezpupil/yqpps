@@ -1,0 +1,66 @@
+# XcodeGen 工程定义：友趣 iOS（纯 Swift / SwiftUI / 无第三方依赖）
+# 生成：cd ios && xcodegen generate
+# 打包：xcodebuild -project YouQu.xcodeproj -scheme YouQu -configuration Release \
+#        -sdk iphoneos -derivedDataPath build \
+#        CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" clean build
+name: YouQu
+
+options:
+  bundleIdPrefix: com.youqu.vod
+  deploymentTarget:
+    iOS: "15.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    ALWAYS_SEARCH_USER_PATHS: "NO"
+    CLANG_ENABLE_MODULES: "YES"
+    # 未签名打包：CI 只产出未签名 IPA，不需要任何证书 / 描述文件
+    CODE_SIGNING_ALLOWED: "NO"
+    CODE_SIGNING_REQUIRED: "NO"
+    CODE_SIGN_IDENTITY: ""
+    # 使用仓库内自带的 Info.plist，避免 Xcode 自动生成值与 ATS 例外冲突
+    GENERATE_INFOPLIST_FILE: "NO"
+    ENABLE_BITCODE: "NO"
+
+targets:
+  YouQu:
+    type: application
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: YouQu
+        excludes:
+          # 这两个由 info.path / SWIFT_OBJC_BRIDGING_HEADER 单独引用，不作为编译源码
+          - "Resources/Info.plist"
+          - "Resources/BridgingHeader.h"
+    info:
+      path: YouQu/Resources/Info.plist
+    settings:
+      base:
+        PRODUCT_NAME: YouQu
+        PRODUCT_BUNDLE_IDENTIFIER: com.youqu.vod.ios
+        IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+        # 与 VodApp/app/build.gradle.kts 的 appVersionName / appVersionCode 对齐。
+        # CI 构建时会再用 gradle 里的值覆盖，这里只是本地 XcodeGen 的兜底值。
+        MARKETING_VERSION: "1.0.22"
+        CURRENT_PROJECT_VERSION: "27"
+        # CommonCrypto 通过桥接头暴露给 Swift（ImageDecryptor 用 CCCrypt 做 AES-128-ECB）
+        SWIFT_OBJC_BRIDGING_HEADER: YouQu/Resources/BridgingHeader.h
+        SWIFT_EMIT_LOC_STRINGS: "YES"
+        # App 图标：YouQu/Resources/Assets.xcassets/AppIcon.appiconset
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # 屏幕方向：竖屏 + 左右横屏（播放器可横屏）
+        # 具体键值写在 Info.plist 的 UISupportedInterfaceOrientations 中
+
+schemes:
+  YouQu:
+    build:
+      targets:
+        YouQu: all
+    run:
+      config: Debug
+    archive:
+      config: Release

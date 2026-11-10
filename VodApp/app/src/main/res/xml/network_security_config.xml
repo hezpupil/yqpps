@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  只对本机回环地址放行明文 HTTP：播放器的取流代理跑在 127.0.0.1 上（见 StreamProxy）。
+  除 localhost 以外的流量一律要求 HTTPS，避免把明文流量开给全网。
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>

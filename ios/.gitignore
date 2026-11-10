@@ -1,0 +1,19 @@
+# Xcode / XcodeGen 生成物
+YouQu.xcodeproj/
+build/
+DerivedData/
+*.xcworkspace/
+xcuserdata/
+*.xcuserstate
+
+# CI 手工打包产物
+Payload/
+*.ipa
+*.app/
+
+# macOS
+.DS_Store
+
+# SwiftPM（本工程不用，但避免误提交）
+.build/
+.swiftpm/

@@ -1,0 +1,178 @@
+name: Android CI
+
+on:
+  workflow_dispatch:   # 只单独编译 Android 时手动触发
+  workflow_call:       # 由 release.yml 复用
+  # 刻意不配 push：push 到 main 统一由 release.yml 触发，
+  # 避免「Android CI 编一次 + Release 再编一次」的双份构建。
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        run: |
+          # ubuntu-latest 镜像已预装 Android SDK 与 cmdline-tools。
+          # 不再使用 android-actions/setup-android@v3：该 action 内部会执行
+          # `sdkmanager tools`，而 tools 包已从 Google 仓库下架，直接 exit 1
+          # （报错 "Failed to find package 'tools'"），导致整个 job 在构建前失败。
+          SDK_ROOT="/usr/local/lib/android/sdk"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          SDKMANAGER=$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager | head -1)
+          if [ -z "$SDKMANAGER" ]; then
+            echo "::error::未找到 sdkmanager（$SDK_ROOT/cmdline-tools）"
+            exit 1
+          fi
+          echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+          echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
+
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          SDK_ROOT="$ANDROID_HOME"
+          SM="$SDKMANAGER"
+          yes | "$SM" --sdk_root="$SDK_ROOT" --licenses > /dev/null 2>&1 || true
+
+          echo "=== 预装 platforms / build-tools ==="
+          ls -1 "$SDK_ROOT/platforms" 2>/dev/null || true
+          ls -1 "$SDK_ROOT/build-tools" 2>/dev/null || true
+          echo "=== 远程仓库可用的 API 35+ 平台包（诊断） ==="
+          "$SM" --sdk_root="$SDK_ROOT" --list --channel=3 2>/dev/null \
+            | grep -oE 'platforms;android-3[5-9](\.[0-9]+)?' | sort -Vu | tail -40 || true
+
+          "$SM" --sdk_root="$SDK_ROOT" "platform-tools" > /dev/null 2>&1 || true
+
+          # build-tools：优先 37.0.0，退回 36.x
+          for b in "build-tools;37.0.0" "build-tools;36.1.0" "build-tools;36.0.0"; do
+            if "$SM" --sdk_root="$SDK_ROOT" "$b" > /dev/null 2>&1; then
+              echo "已安装 $b"; break
+            fi
+          done
+
+          # 关键：Google 仓库里 Android 17 平台包的包名是 platforms;android-37.0 /
+          # platforms;android-37.1（没有 platforms;android-37），但 compileSdk=37
+          # 要求目录名恰为 platforms/android-37。先装官方变体，再派生目录。
+          "$SM" --sdk_root="$SDK_ROOT" "platforms;android-36" > /dev/null 2>&1 || true
+          for p in "platforms;android-37.1" "platforms;android-37.0" \
+                   "platforms;android-37" "platforms;android-36.1"; do
+            if "$SM" --sdk_root="$SDK_ROOT" --channel=3 "$p" > /dev/null 2>&1 \
+               || "$SM" --sdk_root="$SDK_ROOT" "$p" > /dev/null 2>&1; then
+              echo "已安装 $p"; break
+            fi
+          done
+
+          # 兜底：无论上面装到哪个版本，都保证 AGP 能解析 compileSdk=37。
+          # 与本地 build-env 的做法一致（本地 android-37 即由 37.1 派生）。
+          if [ ! -f "$SDK_ROOT/platforms/android-37/android.jar" ]; then
+            SRC=$(ls -1d "$SDK_ROOT/platforms"/android-3*/ 2>/dev/null \
+                  | sed 's:/$::' | sort -V | tail -1)
+            if [ -n "$SRC" ] && [ -f "$SRC/android.jar" ]; then
+              echo "派生 platforms/android-37 <- $(basename "$SRC")"
+              cp -a "$SRC" "$SDK_ROOT/platforms/android-37"
+              SP="$SDK_ROOT/platforms/android-37/source.properties"
+              if [ -f "$SP" ]; then
+                sed -i -e 's/^AndroidVersion\.ApiLevel=.*/AndroidVersion.ApiLevel=37/' \
+                       -e '/^AndroidVersion\.CodeName=/d' "$SP"
+              fi
+              PX="$SDK_ROOT/platforms/android-37/package.xml"
+              if [ -f "$PX" ]; then
+                sed -i -E 's#platforms;android-3[0-9.]+#platforms;android-37#g' "$PX"
+              fi
+            fi
+          fi
+
+          echo "=== 最终 platforms / build-tools ==="
+          ls -1 "$SDK_ROOT/platforms" 2>/dev/null || true
+          ls -1 "$SDK_ROOT/build-tools" 2>/dev/null || true
+          echo "=== android-37/source.properties ==="
+          head -12 "$SDK_ROOT/platforms/android-37/source.properties" 2>/dev/null || true
+          # 本步骤只负责准备 SDK，任何缺包都交给 AGP 9 的自动下载兜底，
+          # 不因 sdkmanager 返回非 0 而让后续 Build / Signing 步骤被跳过。
+          exit 0
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          # 仓库已提交 Gradle 9.5.0 wrapper，构建步骤优先 ./gradlew；
+          # 此 action 提供构建缓存，并在 wrapper 缺失时兜底安装 9.5.0。
+          gradle-version: "9.5.0"
+
+      - name: Prepare signing (optional)
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          # 只有四个 secrets 全部提供时才写签名配置；
+          # 否则保证 keystore.properties 不存在，app/build.gradle.kts 会产出未签名包。
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ] && \
+             [ -n "$KEY_ALIAS" ] && [ -n "$KEY_PASSWORD" ]; then
+            echo "$KEYSTORE_BASE64" | tr -d '\n' | base64 -d > VodApp/keystore.jks
+            printf 'storeFile=keystore.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+              "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > VodApp/keystore.properties
+            echo "已写入签名配置，将产出签名 Release 包"
+          else
+            rm -f VodApp/keystore.properties VodApp/keystore.jks
+            echo "未提供完整签名 secrets，将产出未签名 Release 包"
+          fi
+
+      - name: Build release APK
+        working-directory: VodApp
+        run: |
+          # settings.gradle.kts 已配阿里云镜像（maven.aliyun.com），依赖解析走国内加速。
+          if [ -f gradlew ]; then
+            chmod +x gradlew
+            ./gradlew assembleRelease --no-daemon --console=plain
+          else
+            gradle assembleRelease --no-daemon --console=plain
+          fi
+
+      - name: Report artifact info
+        run: |
+          # 供填写 VodApp/tools/update.json 的 size 字段与校验发布包使用
+          for f in VodApp/app/build/outputs/apk/release/*.apk; do
+            [ -f "$f" ] || continue
+            echo "APK: $f"
+            echo "size: $(stat -c%s "$f")"
+            sha256sum "$f"
+          done
+
+      - name: Prepare release artifact
+        id: apk
+        run: |
+          set -e
+          # 以 app/build.gradle.kts 的 appVersionName 作为唯一版本真相源。
+          # 交付名 youqu-<版本>.apk，服务器目标：
+          # https://yq-app.yqnb.lol/app/apk/youqu-<版本>.apk
+          VER=$(sed -nE 's/^val appVersionName[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' \
+                VodApp/app/build.gradle.kts | head -1)
+          [ -n "$VER" ] || VER="release"
+          SRC=$(ls -1 VodApp/app/build/outputs/apk/release/*.apk | head -1)
+          OUT="youqu-${VER}.apk"
+          mkdir -p dist
+          cp "$SRC" "dist/$OUT"
+          echo "name=$OUT" >> "$GITHUB_OUTPUT"
+          echo "APK: dist/$OUT ($(stat -c%s "dist/$OUT") bytes)"
+          sha256sum "dist/$OUT"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          # artifact 名与真实文件名一致，都带 .apk 扩展名。
+          # 网页下载 artifact 仍会被 GitHub 包一层 zip；可直接安装的原文件见 Release 资产。
+          name: ${{ steps.apk.outputs.name }}
+          path: dist/${{ steps.apk.outputs.name }}
+          if-no-files-found: error
+          compression-level: 0

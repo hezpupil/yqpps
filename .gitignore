@@ -1,0 +1,60 @@
+# ============================================================
+# 所有编译只在 GitHub Actions CI 完成，本地产物一律不入库
+# ============================================================
+
+# 本地构建工具链（1.6G）与便携工具
+/build-env/
+/.tools/
+
+# Android 构建产物
+VodApp/.gradle/
+VodApp/build/
+VodApp/app/build/
+VodApp/app/release/
+VodApp/local.properties
+*.apk
+*.aab
+
+# 签名密钥与密码：只允许通过 CI secrets 注入，绝不提交
+VodApp/keystore.properties
+VodApp/keystore.jks
+VodApp/keystore/
+*.jks
+*.keystore
+
+# iOS 构建产物
+ios/build/
+ios/Payload/
+ios/YouQu.xcodeproj/
+ios/YouQu-unsigned.ipa
+*.ipa
+*.app/
+
+# ============================================================
+# 服务端程序（PHP 网关 / token.php / 激活后台）、部署脚本与说明文档：
+# 只在本地与服务器保留，GitHub 仓库只放 Android + iOS 编译代码。
+# 这些文件仍在工作区，只是不再纳入版本控制（需要时从本地或 git 历史取回）。
+# ============================================================
+/web/
+/VodApp/tools/activation-server/
+/VodApp/tools/make_icons.py
+/VodApp/tools/probe_play.py
+/scripts/
+/README.md
+/overview.md
+/播放页崩溃定位信息.md
+/.github/CI.md
+/.github/SECRETS.md
+/VodApp/README.md
+/ios/README.md
+
+# ============================================================
+# 本地资料 / 编辑器 / 系统
+# ============================================================
+.workbuddy/
+对话记录-*.md
+*.log
+.DS_Store
+Thumbs.db
+*.iml
+.idea/

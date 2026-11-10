@@ -1,0 +1,98 @@
+name: Release (CI 构建产物)
+
+# 唯一发布出口：Android APK 与 iOS 未签名 IPA 全部由 CI 现场编译，
+# 不接受任何本地编译产物上传。
+# push 到 main 即自动「编译两端 + 发版」，无需再手动跑一次 Release；
+# 也可 workflow_dispatch 手动指定 tag。两端子 workflow 不再单独响应 push，
+# 因此每次 push 只编译一遍。
+# 产物命名：youqu-<版本>.apk / youqu-<版本>.ipa。
+# Release 只放两个安装包原文件，不发布 update.json（服务端更新接口由部署方自行维护）。
+# 服务器下载路径约定：
+#   https://yq-app.yqnb.lol/app/apk/youqu-<版本>.apk
+#   https://yq-app.yqnb.lol/app/ipa/youqu-<版本>.ipa
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '发布标签，留空则自动取 v<appVersionName>（例如 v1.0.22）'
+        required: false
+        default: ''
+        type: string
+      notes:
+        description: '更新说明'
+        required: false
+        default: 'GitHub Actions CI 构建产物'
+        type: string
+  push:
+    branches: [main]
+    paths:
+      - 'VodApp/**'
+      - 'ios/**'
+      - '.github/workflows/**'
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    uses: ./.github/workflows/android.yml
+    secrets: inherit
+
+  ios:
+    uses: ./.github/workflows/ios.yml
+
+  publish:
+    needs: [android, ios]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (读取版本号)
+        uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Normalize release assets
+        run: |
+          set -e
+          # merge-multiple 平铺后只保留真正的安装包。
+          # Release 资产是原文件（.apk / .ipa），不像 artifact 下载那样被包成 zip。
+          find dist -type f ! -name "*.apk" ! -name "*.ipa" -delete || true
+          echo "=== Release 资产（原始文件，可直接下载）==="
+          ls -lh dist
+          test -n "$(find dist -maxdepth 1 -type f -name '*.apk' -print -quit)"
+          test -n "$(find dist -maxdepth 1 -type f -name '*.ipa' -print -quit)"
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_NOTES: ${{ inputs.notes }}
+        run: |
+          set -e
+          # push 触发时没有 inputs，tag 直接从 appVersionName 推导，保证一次推送即可发版
+          if [ -n "$INPUT_TAG" ]; then
+            TAG="$INPUT_TAG"
+          else
+            VER=$(sed -nE 's/^val appVersionName[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' \
+                  VodApp/app/build.gradle.kts | head -1)
+            TAG="v${VER:-0}"
+          fi
+          NOTES="${INPUT_NOTES:-GitHub Actions CI 构建产物}"
+          echo "TAG=$TAG"
+          # 同一版本多次 push 时覆盖资产，而不是让 release create 报错失败
+          # 只上传两个安装包，不发布 update.json 或其他元数据文件
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG 已存在，覆盖上传资产"
+            gh release upload "$TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" dist/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$TAG" \
+              --notes "$NOTES"
+          fi
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --json tagName,url,assets \
+            --jq '"发布完成: \(.tagName) \(.url)", (.assets[]? | "  asset: \(.name) \(.size)B")'
