@@ -1,9 +1,9 @@
 {
-  "versionCode": 29,
-  "versionName": "1.0.24",
-  "apkUrl": "https://yq-app.yqnb.lol/app/apk/youqu-1.0.24.apk",
-  "iosUrl": "https://yq-app.yqnb.lol/app/ipa/youqu-1.0.24.ipa",
-  "changelog": "1.0.24 更新说明：\n· 两端更新弹窗改为强制更新，升级后才能继续使用\n· 更新弹窗不再显示下载地址，只展示更新日志与下载按钮\n· iOS 冷启动检查更新的版本判断加固",
+  "versionCode": 30,
+  "versionName": "1.0.25",
+  "apkUrl": "https://yq-app.yqnb.lol/app/apk/youqu-1.0.25.apk",
+  "iosUrl": "https://yq-app.yqnb.lol/app/ipa/youqu-1.0.25.ipa",
+  "changelog": "1.0.25 更新说明：\n· 自动更新弹窗测试版本（功能与上一版一致）",
   "force": true,
   "size": 17118289
 }

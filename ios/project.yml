@@ -45,8 +45,8 @@ targets:
         SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
         # 与 VodApp/app/build.gradle.kts 的 appVersionName / appVersionCode 对齐。
         # CI 构建时会再用 gradle 里的值覆盖，这里只是本地 XcodeGen 的兜底值。
-        MARKETING_VERSION: "1.0.24"
-        CURRENT_PROJECT_VERSION: "29"
+        MARKETING_VERSION: "1.0.25"
+        CURRENT_PROJECT_VERSION: "30"
         # CommonCrypto 通过桥接头暴露给 Swift（ImageDecryptor 用 CCCrypt 做 AES-128-ECB）
         SWIFT_OBJC_BRIDGING_HEADER: YouQu/Resources/BridgingHeader.h
         SWIFT_EMIT_LOC_STRINGS: "YES"
