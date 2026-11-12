@@ -5,5 +5,5 @@
   "iosUrl": "https://yq-app.yqnb.lol/app/ipa/youqu-1.0.26.ipa",
   "changelog": "1.0.26 更新说明：\n· iOS 强制更新页新增「巨魔直装」，已安装 TrollStore 的设备可一键下载并永久签名安装\n· 未安装巨魔的设备仍可使用「前往下载」，强制更新规则不变",
   "force": true,
-  "size": 17118288
+  "size": 17118289
 }

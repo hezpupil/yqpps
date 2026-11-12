@@ -85,10 +85,14 @@ jobs:
                   }
               }
           }
+          # 巨魔直装复用的系统 scheme。open(_:options:) 本身不要求白名单，
+          # 但源 Info.plist 已声明，这里同步写回以保证产物与源码一致。
+          d["LSApplicationQueriesSchemes"] = ["apple-magnifier"]
           p.write_bytes(plistlib.dumps(d, fmt=plistlib.FMT_BINARY))
           print("Info.plist 已写回:",
                 d["CFBundleDisplayName"], d["CFBundleShortVersionString"],
-                "ATS:", "NSAppTransportSecurity" in d)
+                "ATS:", "NSAppTransportSecurity" in d,
+                "queries:", d["LSApplicationQueriesSchemes"])
           PY
 
       - name: Package IPA
