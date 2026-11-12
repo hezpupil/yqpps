@@ -3,10 +3,10 @@ import UIKit
 
 /// 强制更新页（全屏，不可取消）。
 ///
-/// 内容只有：版本号、更新日志、一个「前往下载」按钮。
-/// 下载地址由 update.json 提供但**不展示**给用户，点击按钮才交给系统浏览器打开。
+/// 内容只有：版本号、更新日志、两个跳转按钮与一行必要的说明。
+/// 下载地址由 update.json 提供但**不展示**给用户，点击按钮才交给系统打开。
 /// 本页由 ContentView 的 fullScreenCover 呈现，配合忽略关闭请求与
-/// interactiveDismissDisabled，任何手势 / 返回都无法关掉；从浏览器回到 App 仍然在此页。
+/// interactiveDismissDisabled，任何手势 / 返回都无法关掉；从浏览器或巨魔回到 App 仍在页。
 struct UpdateRequiredView: View {
     let info: AppUpdateInfo
 
@@ -53,6 +53,8 @@ struct UpdateRequiredView: View {
                     .foregroundColor(Theme.accent)
                     .padding(.top, 14)
 
+                // 通用路径：交给 Safari / 系统下载页（普通未签名 IPA 在 Safari 里装不了，
+                // 但保留这一入口作为兜底，也便于查看文件）。
                 Button {
                     guard let url = URL(string: info.downloadURL) else { return }
                     UIApplication.shared.open(url, options: [:], completionHandler: nil)
@@ -62,6 +64,32 @@ struct UpdateRequiredView: View {
                 .buttonStyle(AccentButtonStyle())
                 .padding(.horizontal, 28)
                 .padding(.top, 24)
+
+                // 巨魔路径：直接唤起 TrollStore 下载并永久签名安装未签名 IPA，
+                // 这是 iOS 端唯一能真正完成自更新的方式。
+                Button {
+                    TrollInstaller.install(ipaURL: info.downloadURL)
+                } label: {
+                    Text("巨魔直装")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(Theme.accent)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(Theme.accent.opacity(0.55), lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 28)
+                .padding(.top, 12)
+
+                Text("「巨魔直装」需本机已安装 TrollStore；未安装请使用上方按钮")
+                    .font(.system(size: 11))
+                    .foregroundColor(Theme.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 28)
+                    .padding(.top, 10)
 
                 Spacer(minLength: 0)
             }

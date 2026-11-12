@@ -45,6 +45,14 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<!--
+		TrollStore 直装复用的系统 scheme（apple-magnifier://install?url=）。
+		open(_:options:) 本身不需要白名单，此处声明仅为保证各 iOS 版本行为一致。
+	-->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>apple-magnifier</string>
+	</array>
+	<!--
 		AVPlayer 加载的是 http://127.0.0.1:{port}/m3u8?... 本机代理地址。
 		iOS 默认 ATS 只放行 HTTPS，因此必须对本机回环地址开 HTTP 例外。
 		仅对 127.0.0.1 生效，不波及其它域名，也不包含子域。

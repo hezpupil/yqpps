@@ -34,7 +34,7 @@ struct ContentView: View {
         }
         .oledBackground()
         .task { await runGate() }
-        // 全 App 唯一的【强制更新页】：内容只有更新日志 + 一个跳转按钮，不显示下载地址。
+        // 全 App 唯一的【强制更新页】：内容只有更新日志 + 前往下载 / 巨魔直装两个按钮，不显示下载地址。
         // fullScreenCover + 忽略 set(false) + interactiveDismissDisabled：
         // 返回、点外部、下滑、"稍后再说" 全部不存在，浏览器回来后页面仍在。
         .fullScreenCover(
