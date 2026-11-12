@@ -20,8 +20,8 @@ val hasSigningConfig = keystorePropsFile.exists()
 // 升级时改这里 + tools/update.json 的 versionCode/versionName/apkUrl/iosUrl/changelog；
 // CI 编译完会自动把 update.json 的 size 回填成本次 APK 真实字节数，
 // 再连同两个安装包一起上传到自有服务器（不创建 GitHub Release）。
-val appVersionCode = 30
-val appVersionName = "1.0.25"
+val appVersionCode = 31
+val appVersionName = "1.0.26"
 
 android {
     namespace = "com.youqu.vod"
@@ -94,7 +94,7 @@ android {
     }
 }
 
-// 正式包按版本号命名：youqu-<versionName>.apk（如 youqu-1.0.25.apk），
+// 正式包按版本号命名：youqu-<versionName>.apk（如 youqu-1.0.26.apk），
 // 与 CI 交付名、服务器 /app/apk/ 下的文件名、update.json 的 apkUrl 完全一致。
 androidComponents {
     onVariants(selector().withBuildType("release")) { variant ->

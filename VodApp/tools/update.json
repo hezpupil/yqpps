@@ -1,9 +1,9 @@
 {
-  "versionCode": 30,
-  "versionName": "1.0.25",
-  "apkUrl": "https://yq-app.yqnb.lol/app/apk/youqu-1.0.25.apk",
-  "iosUrl": "https://yq-app.yqnb.lol/app/ipa/youqu-1.0.25.ipa",
-  "changelog": "1.0.25 更新说明：\n· 自动更新弹窗测试版本（功能与上一版一致）",
+  "versionCode": 31,
+  "versionName": "1.0.26",
+  "apkUrl": "https://yq-app.yqnb.lol/app/apk/youqu-1.0.26.apk",
+  "iosUrl": "https://yq-app.yqnb.lol/app/ipa/youqu-1.0.26.ipa",
+  "changelog": "1.0.26 更新说明：\n· iOS 强制更新页新增「巨魔直装」，已安装 TrollStore 的设备可一键下载并永久签名安装\n· 未安装巨魔的设备仍可使用「前往下载」，强制更新规则不变",
   "force": true,
   "size": 17118288
 }
