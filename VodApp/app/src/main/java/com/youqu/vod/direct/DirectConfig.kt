@@ -47,6 +47,12 @@ object DirectConfig {
     const val IPHONE_UA =
         "Mozilla/5.0 (iPhone; CPU iPhone OS 16_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
 
+    /**
+     * 设备注册渠道：登录前需 GET /java/device/{渠道}/{device} 激活设备。
+     * 来自抓包 /?ch=hezi1 与 /java/device/hezi1/{device}。
+     */
+    const val DEVICE_CHANNEL = "hezi1"
+
     /** 本地网关端口候选：避开原有 StreamProxy 的 18925~18929，两套可并存 */
     val PORTS = intArrayOf(19025, 19026, 19027, 19028, 19029)
 

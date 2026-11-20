@@ -233,6 +233,22 @@ actor TokenProvider {
         return json
     }
 
+    // MARK: - 设备激活
+
+    /// 设备注册：GET /java/device/{渠道}/{device}?av1=&h265=，与抓包 11:42 的 200 请求一致。
+    /// 尽力而为：失败不阻断登录主流程。
+    private func activateDevice(baseUrl: String, device: String) async {
+        let root = baseUrl.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let url = URL(string: "\(root)/java/device/\(DirectConfig.deviceChannel)/\(device)?av1=&h265=") else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        req.setValue(DirectConfig.apiUserAgent(device), forHTTPHeaderField: "User-Agent")
+        req.setValue("*/*", forHTTPHeaderField: "Accept")
+        req.setValue("zh-CN,zh-Hans;q=0.9", forHTTPHeaderField: "Accept-Language")
+        req.setValue("gzip, deflate", forHTTPHeaderField: "Accept-Encoding")
+        _ = try? await session.data(for: req)
+    }
+
     // MARK: - 凭证解密 / 上游登录
 
     /// cipher(base64) → AES-128-ECB 解密 → JSON {"u":..,"p":..}
@@ -250,7 +266,12 @@ actor TokenProvider {
 
     /// 用【手机自身网络出口】POST /java/v2/login，响应是倒序 Base64 的 JSON，取 data.token
     private func loginUpstream(baseUrl: String, device: String, username: String, password: String) async throws -> String {
-        guard let url = URL(string: baseUrl.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/java/v2/login") else {
+        // 关键：登录前先用 device 请求 /java/device/{渠道}/{device} 激活设备。
+        // 抓包证明浏览器启动顺序为 设备激活 → /java/v2/login；未激活的 device 登录会被伪装成 404。
+        await activateDevice(baseUrl: baseUrl, device: device)
+
+        let root = baseUrl.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let url = URL(string: root + "/java/v2/login") else {
             throw TokenError.badURL
         }
         var req = URLRequest(url: url)
@@ -261,13 +282,16 @@ actor TokenProvider {
         req.setValue("device=\(device)", forHTTPHeaderField: "Cookie")
         req.setValue(DirectConfig.apiUserAgent(device), forHTTPHeaderField: "User-Agent")
         req.setValue(baseUrl, forHTTPHeaderField: "Origin")
-        req.setValue("\(baseUrl)/", forHTTPHeaderField: "Referer")
+        // 抓包的登录请求不带 Referer；去掉以贴近真实浏览器，避免 WAF 判定为非浏览器
         req.setValue("*/*", forHTTPHeaderField: "Accept")
         req.setValue("zh-CN,zh-Hans;q=0.9", forHTTPHeaderField: "Accept-Language")
 
         let (data, resp) = try await session.data(for: req)
         guard let http = resp as? HTTPURLResponse else { throw TokenError.server("上游登录无响应") }
-        guard (200..<300).contains(http.statusCode) else { throw TokenError.http(http.statusCode) }
+        guard (200..<300).contains(http.statusCode) else {
+            let snippet = String(data: data, encoding: .utf8)?.prefix(120) ?? ""
+            throw TokenError.server("上游登录 HTTP \(http.statusCode) · \(snippet)")
+        }
         let decoded = try ResponseDecoder.decode(data)
         guard decoded.success else {
             throw TokenError.server("上游登录被拒 code=\(decoded.code) \(decoded.message)")

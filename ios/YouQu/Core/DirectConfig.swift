@@ -11,6 +11,9 @@ enum DirectConfig {
     /// 上游业务站点兜底值；token.php 下发的 base_url 会覆盖它
     static let defaultUpstream = "https://monday.wzjlz.com"
 
+    /// 设备注册渠道：登录前需 GET /java/device/{渠道}/{device} 激活设备（来自抓包 /?ch=hezi1）
+    static let deviceChannel = "hezi1"
+
     /// 凭证仓库模式：token.php 退化成纯 token 仓库（不访问上游，不受 WAF 影响）。
     /// 仓库无有效 token 时下发加密账号密码，App 用自身网络出口登录并回传新 token。
     static let credentialAESKey = "yq-cred-8kM2pX7z"  // AES-128-ECB，16 字节，与服务器 config.php 一致

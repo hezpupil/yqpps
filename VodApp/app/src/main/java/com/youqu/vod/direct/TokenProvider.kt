@@ -56,6 +56,10 @@ class TokenProvider(
     @Volatile
     private var cached: Credential? = null
 
+    /** 最近一次设备激活结果，供登录失败诊断（"激活OK"/"激活HTTP xxx"） */
+    @Volatile
+    private var lastActivate = "未激活"
+
     @Synchronized
     fun get(forceRefresh: Boolean = false): Credential {
         if (!forceRefresh) cached?.let { return it }
@@ -214,11 +218,19 @@ class TokenProvider(
     private fun loginUpstream(
         baseUrl: String, device: String, username: String, password: String
     ): String {
+        // 关键：登录前必须先用 device 请求 /java/device/{渠道}/{device} 完成设备注册。
+        // HAR（11:42 抓包）证明浏览器启动顺序为：/java/device/hezi1/{device} → /java/v2/login。
+        // 未注册的 device 直接登录会被上游伪装成 404（WAF），这正是"上游登录 HTTP 404"的根因。
+        activateDevice(baseUrl, device)
+
         val url = baseUrl.trimEnd('/') + "/java/v2/login"
         val form = FormBody.Builder(Charsets.UTF_8)
             .add("username", username)
             .add("password", password)
             .build()
+        // 请求头严格对齐手机浏览器抓包（HAR 11:43 登录 200 的那条）：
+        // - 不带 Referer（抓包里没有，WAF 可能据此判定为非浏览器）
+        // - 带 Accept-Encoding / Connection，贴近真实 Safari
         val req = Request.Builder()
             .url(url)
             .post(form)
@@ -226,13 +238,18 @@ class TokenProvider(
             .header("Cookie", "device=$device")
             .header("User-Agent", DirectConfig.apiUserAgent(device))
             .header("Origin", baseUrl)
-            .header("Referer", "$baseUrl/")
             .header("Accept", "*/*")
             .header("Accept-Language", "zh-CN,zh-Hans;q=0.9")
+            .header("Accept-Encoding", "gzip, deflate")
+            .header("Connection", "keep-alive")
             .build()
         client.newCall(req).execute().use { resp ->
             val body = resp.body?.string().orEmpty()
-            if (!resp.isSuccessful) throw IOException("上游登录 HTTP ${resp.code}")
+            if (!resp.isSuccessful) {
+                // 带上设备激活状态 + 响应体片段，一次看清是 WAF 拦截页还是上游真实 404
+                val snippet = body.take(160).replace(Regex("\\s+"), " ")
+                throw IOException("上游登录 HTTP ${resp.code} [$lastActivate]${if (snippet.isNotBlank()) " · $snippet" else ""}")
+            }
             val decoded = decodeUpstream(body)
             val code = decoded.optInt("code", -1)
             if (code != 1 && code != 0 && code != 200) {
@@ -241,6 +258,37 @@ class TokenProvider(
             val token = decoded.optJSONObject("data")?.optString("token", "").orEmpty()
             if (token.isBlank()) throw IOException("上游登录成功但未返回 token")
             return token
+        }
+    }
+
+    /**
+     * 设备注册：GET /java/device/{渠道}/{device}?av1=&h265=
+     * 与 HAR 11:42:10 那条 200 请求逐字段一致（UA 带 abab 后缀、无 Cookie、无 Referer）。
+     * 尽力而为：激活失败不直接抛错，仍尝试登录；但记录响应体便于诊断。
+     */
+    private fun activateDevice(baseUrl: String, device: String) {
+        val url = baseUrl.trimEnd('/') + "/java/device/" +
+            DirectConfig.DEVICE_CHANNEL + "/$device?av1=&h265="
+        val req = Request.Builder()
+            .url(url)
+            .get()
+            .header("User-Agent", DirectConfig.apiUserAgent(device))
+            .header("Accept", "*/*")
+            .header("Accept-Language", "zh-CN,zh-Hans;q=0.9")
+            .header("Accept-Encoding", "gzip, deflate")
+            .header("Connection", "keep-alive")
+            .build()
+        try {
+            client.newCall(req).execute().use { resp ->
+                lastActivate = if (resp.isSuccessful) "激活OK" else {
+                    val snippet = (resp.body?.string().orEmpty()).take(80).replace(Regex("\\s+"), " ")
+                    "激活HTTP${resp.code}${if (snippet.isNotBlank()) ":$snippet" else ""}"
+                }
+                android.util.Log.w("TokenProvider", "设备激活结果：$lastActivate")
+            }
+        } catch (e: Exception) {
+            lastActivate = "激活异常:${e.message}"
+            android.util.Log.w("TokenProvider", "设备激活失败（继续尝试登录）：${e.message}")
         }
     }
 
