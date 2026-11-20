@@ -46,7 +46,7 @@ interface ApiService {
     @GET
     suspend fun login(@Url url: String): ApiEnvelope<EmptyData>
 
-    /* ---- 短剧专区（/java/drama/*，字段与影视 VOD 隔离） ---- */
+    /* ---- 短剧专区（java drama 系列接口，字段与影视 VOD 隔离） ---- */
     @GET
     suspend fun dramaList(@Url url: String): ApiEnvelope<DramaListData>
 
