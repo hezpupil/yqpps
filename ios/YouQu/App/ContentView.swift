@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 enum MainTab: Hashable {
-    case home, hot, settings
+    case home, hot, drama, settings
 }
 
 /// 顶层：先过云端激活门禁，再进入主 TabView。
@@ -77,6 +77,10 @@ struct MainTabs: View {
             HotView()
                 .tabItem { Label("热榜", systemImage: "flame.fill") }
                 .tag(MainTab.hot)
+
+            DramaSeriesView()
+                .tabItem { Label("短剧", systemImage: "film.stack") }
+                .tag(MainTab.drama)
 
             SettingsView()
                 .tabItem { Label("设置", systemImage: "gearshape.fill") }

@@ -111,6 +111,11 @@ final class LocalProxyServer {
             (vid.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? vid)
     }
 
+    /// 短剧播放地址：eps[].src 是带一次性签名的 m3u8 绝对地址，经本机 /dm3u8 代取并改写分片
+    func dramaM3u8URL(src: String) -> String {
+        "\(effectiveBase)/dm3u8?u=" + DirectConfig.b64url(src)
+    }
+
     func pingURL() -> String { effectiveBase + "/ping" }
 
     private func normalizeImage(_ raw: String) -> String {
@@ -274,6 +279,8 @@ final class LocalProxyServer {
             return await handleImage(req)
         case "/m3u8":
             return await handleM3u8(req)
+        case "/dm3u8":
+            return await handleDramaM3u8(req)
         case "/seg":
             return await handleSeg(req)
         default:
@@ -303,6 +310,40 @@ final class LocalProxyServer {
 
             let rewritten = M3u8Rewriter.rewrite(
                 playlist: text, playlistURL: src, localBase: effectiveBase, vid: vid)
+            let body = Data(rewritten.utf8)
+            return HTTPResponse(status: 200, reason: "OK",
+                                headers: ["Content-Type": "application/vnd.apple.mpegurl",
+                                          "Content-Length": "\(body.count)",
+                                          "Cache-Control": "no-store",
+                                          "Access-Control-Allow-Origin": "*",
+                                          "Connection": "close"],
+                                body: body)
+        } catch {
+            return simple(502, "playlist fetch failed")
+        }
+    }
+
+    // MARK: /dm3u8（短剧：eps[].src 带一次性签名，与 Android /dm3u8 行为对齐）
+
+    private func handleDramaM3u8(_ req: HTTPRequest) async -> HTTPResponse {
+        guard let encoded = req.query["u"],
+              let src = DirectConfig.b64urlDecode(encoded), !src.isEmpty else {
+            return simple(400, "missing u")
+        }
+        guard await allowedSegmentHost(src) else { return simple(403, "host not allowed") }
+
+        do {
+            let (resp, data) = try await UpstreamClient.shared.fetchRaw(url: src)
+            guard (200..<300).contains(resp.statusCode) else {
+                return simple(502, "playlist upstream HTTP \(resp.statusCode)")
+            }
+            guard let text = String(data: data, encoding: .utf8),
+                  text.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("#EXTM3U") else {
+                return simple(502, "invalid playlist")
+            }
+            // vid 传空：短剧分片 4xx 时不走 show 重取（Android 端同样行为）
+            let rewritten = M3u8Rewriter.rewrite(
+                playlist: text, playlistURL: src, localBase: effectiveBase, vid: "")
             let body = Data(rewritten.utf8)
             return HTTPResponse(status: 200, reason: "OK",
                                 headers: ["Content-Type": "application/vnd.apple.mpegurl",

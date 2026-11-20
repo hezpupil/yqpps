@@ -140,14 +140,16 @@ fun PlayerScreen(
 
     val title = (state as? UiState.Success)?.data?.video?.title ?: "加载中…"
     var fullscreen by remember { mutableStateOf(false) }
+    // 视频宽高比 <1 视为竖屏视频：全屏时不旋转横屏，改为竖屏铺满放大
+    val isPortraitVideo = controller.state.videoRatio.let { it != null && it > 0f && it < 1f }
 
     fun applyFullscreen(enable: Boolean) {
         fullscreen = enable
         val act = activity ?: return
-        act.requestedOrientation = if (enable) {
-            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        } else {
-            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        act.requestedOrientation = when {
+            !enable -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            isPortraitVideo -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            else -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         }
         val window = act.window ?: return
         WindowCompat.setDecorFitsSystemWindows(window, !enable)

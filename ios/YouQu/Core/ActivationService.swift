@@ -170,7 +170,7 @@ final class ActivationService {
     func report() async -> Bool {
         let model = UIDevice.current.model
         let os = "iOS " + UIDevice.current.systemVersion
-        let app = (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "1.0.31"
+        let app = (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "1.0.32"
         let json = try? await post([
             "action": "report",
             "device": deviceCodeRaw(),

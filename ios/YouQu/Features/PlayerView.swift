@@ -2,6 +2,7 @@ import SwiftUI
 import AVFoundation
 import UIKit
 import Foundation
+import Combine
 
 // PlayTarget 定义在 App/AppNavigation.swift：播放页现在是导航栈里的独立页面。
 
@@ -23,6 +24,9 @@ final class PlayerViewModel: ObservableObject {
     private var timeObserver: Any?
     private var statusObservation: NSKeyValueObservation?
     private var didRetry = false
+    /// 视频宽高比（presentationSize）：nil=未知；<1 为竖屏视频
+    @Published var videoRatio: Double?
+    private var sizeObservation: NSKeyValueObservation?
     /// 常驻倍速（控制条点击循环切换），长按松手后恢复到这里
     private var normalRate: Float = 1.0
     /// 与安卓 SPEED_STEPS 保持一致
@@ -44,6 +48,16 @@ final class PlayerViewModel: ObservableObject {
 
         let item = AVPlayerItem(url: url)
         player.replaceCurrentItem(with: item)
+
+        // 视频尺寸：竖屏视频全屏时改为竖屏铺满放大（与短剧播放页行为一致）
+        sizeObservation = item.publisher(for: \.presentationSize)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] size in
+                guard let self else { return }
+                if size.width > 0, size.height > 0 {
+                    self.videoRatio = Double(size.width / size.height)
+                }
+            }
 
         // 分片 4xx / 播放失败：自动重新拉一次播放列表换新地址再试一次
         statusObservation = item.observe(\.status) { [weak self] observed, _ in
@@ -130,6 +144,8 @@ final class PlayerViewModel: ObservableObject {
         }
         statusObservation?.invalidate()
         statusObservation = nil
+        sizeObservation?.invalidate()
+        sizeObservation = nil
     }
 }
 
@@ -208,6 +224,8 @@ struct PlayerView: View {
         }
         // 用自绘顶栏，隐藏系统导航栏避免出现两个返回按钮
         .navigationBarHidden(true)
+        // 全屏时隐藏状态栏（竖屏视频竖向放大全屏 / 横屏视频旋转后都需要）
+        .statusBar(hidden: isFullscreen)
         .onAppear {
             if !playbackGateHeld {
                 playbackGateHeld = true
@@ -387,7 +405,8 @@ struct PlayerView: View {
 
     private func toggleFullscreen() {
         isFullscreen.toggle()
-        applyOrientation(landscape: isFullscreen)
+        // 竖屏视频：全屏不旋转横屏，保持竖屏铺满放大（PlayerUIView resizeAspect 自动按比例居中）
+        applyOrientation(landscape: isFullscreen && !(vm.videoRatio.map { $0 < 1 } ?? false))
     }
 
     /// Info.plist 已声明 Portrait + LandscapeLeft + LandscapeRight，这里只请求方向。

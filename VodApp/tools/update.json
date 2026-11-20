@@ -1,9 +1,9 @@
 {
-  "versionCode": 36,
-  "versionName": "1.0.31",
-  "apkUrl": "https://yq-app.yqnb.lol/app/apk/youqu-1.0.31.apk",
-  "iosUrl": "https://yq-app.yqnb.lol/app/ipa/youqu-1.0.31.ipa",
-  "changelog": "1.0.31 更新说明：\n· 修复取数失败：登录改用浏览器内核，规避上游风控",
+  "versionCode": 37,
+  "versionName": "1.0.32",
+  "apkUrl": "https://yq-app.yqnb.lol/app/apk/youqu-1.0.32.apk",
+  "iosUrl": "https://yq-app.yqnb.lol/app/ipa/youqu-1.0.32.ipa",
+  "changelog": "1.0.32 更新说明：\n· iOS 新增短剧专区\n· 竖屏视频全屏改为竖屏放大播放\n· 选集改为底部浮层",
   "force": true,
   "size": 17118289
 }
