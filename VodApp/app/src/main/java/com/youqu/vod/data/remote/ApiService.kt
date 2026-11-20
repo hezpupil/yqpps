@@ -1,6 +1,10 @@
 package com.youqu.vod.data.remote
 
 import com.youqu.vod.data.model.ApiEnvelope
+import com.youqu.vod.data.model.DramaDetailData
+import com.youqu.vod.data.model.DramaHotData
+import com.youqu.vod.data.model.DramaListData
+import com.youqu.vod.data.model.DramaSearchData
 import com.youqu.vod.data.model.EmptyData
 import com.youqu.vod.data.model.HotListData
 import com.youqu.vod.data.model.IndexData
@@ -41,4 +45,17 @@ interface ApiService {
 
     @GET
     suspend fun login(@Url url: String): ApiEnvelope<EmptyData>
+
+    /* ---- 短剧专区（/java/drama/*，字段与影视 VOD 隔离） ---- */
+    @GET
+    suspend fun dramaList(@Url url: String): ApiEnvelope<DramaListData>
+
+    @GET
+    suspend fun dramaHot(@Url url: String): ApiEnvelope<DramaHotData>
+
+    @GET
+    suspend fun dramaSearch(@Url url: String): ApiEnvelope<DramaSearchData>
+
+    @GET
+    suspend fun dramaDetail(@Url url: String): ApiEnvelope<DramaDetailData>
 }

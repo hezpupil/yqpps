@@ -170,6 +170,7 @@ class LocalGateway(
             "/api" -> { handleApi(req, out); req.keepAlive }
             "/img" -> { handleImage(req, out); req.keepAlive }
             "/m3u8" -> { handleM3u8(req, out); req.keepAlive }
+            "/dm3u8" -> { handleDramaM3u8(req, out); req.keepAlive }
             "/seg" -> { handleSeg(req, out); false }
             else -> { writeSimple(out, 404, "not found"); false }
         }
@@ -235,6 +236,51 @@ class LocalGateway(
                 "device_active" -> envelope(
                     upstream.postMultipart(path = "/java/device/active", fields = emptyMap(), needAuth = true)
                 )
+
+                /* ---- 短剧专区（/java/drama/*，与影视分区隔离） ---- */
+                "drama_lists" -> {
+                    val page = (req.query["page"]?.toIntOrNull() ?: 1).coerceAtLeast(1)
+                    envelope(upstream.get("/java/drama/lists", mapOf("page" to page.toString())))
+                }
+
+                "drama_hot" -> envelope(upstream.get("/java/drama/hotWords"))
+
+                "drama_search" -> {
+                    val kw = req.query["kw"].orEmpty()
+                    val page = (req.query["page"]?.toIntOrNull() ?: 1).coerceAtLeast(1)
+                    envelope(
+                        upstream.postMultipart(
+                            path = "/java/drama/search",
+                            fields = linkedMapOf(
+                                "kw" to kw,
+                                "page" to page.toString(),
+                                "spm" to "drama.restore"
+                            )
+                        ).also { injectPage(it, page) }
+                    )
+                }
+
+                "drama_detail" -> {
+                    val id = req.query["id"].orEmpty()
+                    val env = envelope(
+                        upstream.postMultipart(
+                            path = "/java/drama/detail",
+                            fields = linkedMapOf("id" to id),
+                            needAuth = true
+                        )
+                    )
+                    // 每集 src 是带签名的 m3u8 直链，改写到本地 /dm3u8 按 src 代取（会过期时前端重新拉 detail）
+                    env.optJSONObject("data")?.optJSONArray("eps")?.let { eps ->
+                        for (i in 0 until eps.length()) {
+                            val ep = eps.optJSONObject(i) ?: continue
+                            val src = ep.optString("src", "")
+                            if (src.isNotBlank()) {
+                                ep.put("src", "${localBase}/dm3u8?u=" + java.net.URLEncoder.encode(b64url(src), "UTF-8"))
+                            }
+                        }
+                    }
+                    env
+                }
 
                 "login", "refresh" -> {
                     tokens.get(forceRefresh = true)
@@ -356,6 +402,53 @@ class LocalGateway(
         }
         if (src.isBlank()) {
             writeSimple(out, 502, "no src in show response")
+            return
+        }
+        val resp = try {
+            upstream.fetchRaw(src)
+        } catch (e: Exception) {
+            writeSimple(out, 502, "playlist fetch failed")
+            return
+        }
+        resp.use { r ->
+            if (!r.isSuccessful) {
+                writeSimple(out, 502, "playlist upstream HTTP ${r.code}")
+                return
+            }
+            val text = r.body?.string().orEmpty()
+            if (!text.trimStart().startsWith("#EXTM3U")) {
+                writeSimple(out, 502, "invalid playlist")
+                return
+            }
+            val rewritten = M3u8Rewriter.rewrite(text, src, localBase)
+            val bytes = rewritten.toByteArray(Charsets.UTF_8)
+            writeHead(
+                out, 200, "OK", mapOf(
+                    "Content-Type" to "application/vnd.apple.mpegurl",
+                    "Content-Length" to bytes.size.toString(),
+                    "Cache-Control" to "no-store",
+                    "Access-Control-Allow-Origin" to "*",
+                    "Connection" to "keep-alive"
+                )
+            )
+            out.write(bytes)
+        }
+    }
+
+    /* ---------------- /dm3u8：短剧 m3u8 播放列表改写（按传入 src 直取） ---------------- */
+
+    private fun handleDramaM3u8(req: Req, out: OutputStream) {
+        val raw = req.query["u"].orEmpty()
+        val src = b64urlDecode(raw)
+        if (src.isNullOrBlank()) {
+            writeSimple(out, 400, "missing u")
+            return
+        }
+        val host = hostOf(src)
+        val allowed = host in DirectConfig.SEGMENT_HOSTS ||
+            host.endsWith(".100njp.com") || host.endsWith(".xxcjpt.com")
+        if (!allowed || !src.startsWith("https://")) {
+            writeSimple(out, 403, "host not allowed")
             return
         }
         val resp = try {

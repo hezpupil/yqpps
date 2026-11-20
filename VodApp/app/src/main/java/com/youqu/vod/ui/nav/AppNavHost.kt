@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -19,7 +20,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -43,6 +46,10 @@ import com.youqu.vod.core.UiState
 import com.youqu.vod.data.local.ActivationRepository
 import com.youqu.vod.data.model.ShowData
 import com.youqu.vod.di.viewModelFactory
+import com.youqu.vod.ui.drama.DramaDetailScreen
+import com.youqu.vod.ui.drama.DramaDetailViewModel
+import com.youqu.vod.ui.drama.DramaScreen
+import com.youqu.vod.ui.drama.DramaViewModel
 import com.youqu.vod.ui.home.HomeScreen
 import com.youqu.vod.ui.home.HomeViewModel
 import com.youqu.vod.ui.hot.HotScreen
@@ -64,11 +71,30 @@ import com.youqu.vod.util.vid
 
 const val ROUTE_HOME = "home"
 const val ROUTE_HOT = "hot"
+const val ROUTE_DRAMA = "drama"
 const val ROUTE_SETTINGS = "settings"
 const val ROUTE_SEARCH = "search/{kw}/{order}/{page}"
 const val ROUTE_PLAY = "play/{vid}"
+const val ROUTE_DRAMA_PLAY = "drama_play/{did}"
+const val ROUTE_DRAMA_SEARCH = "drama_search/{kw}"
 const val PREFIX_PLAY = "play"
 const val PREFIX_SEARCH = "search"
+const val PREFIX_DRAMA_PLAY = "drama_play"
+const val PREFIX_DRAMA_SEARCH = "drama_search"
+
+/** 短剧搜索页与影视搜索隔离，使用自己的路由 */
+fun NavController.navigateToDramaSearch(keyword: String) {
+    navigate("drama_search/${Uri.encode(keyword)}") {
+        popUpTo(ROUTE_DRAMA_SEARCH) { inclusive = true }
+    }
+}
+
+/** 短剧详情播放页之间切换时替换，避免返回栈堆积 */
+fun NavController.navigateToDramaPlay(dramaId: String) {
+    navigate("drama_play/${Uri.encode(dramaId)}") {
+        popUpTo(ROUTE_DRAMA_PLAY) { inclusive = true }
+    }
+}
 
 /** 排序与翻页时替换当前搜索页，避免在返回栈里堆出一串相同页面 */
 fun NavController.navigateToSearch(keyword: String, order: Int, page: Int) {
@@ -114,7 +140,10 @@ fun AppNavHost() {
     Scaffold(
         containerColor = OledBlack,
         bottomBar = {
-            if (!currentRoute.startsWith(PREFIX_PLAY)) {
+            if (!currentRoute.startsWith(PREFIX_PLAY) &&
+                !currentRoute.startsWith(PREFIX_DRAMA_PLAY) &&
+                !currentRoute.startsWith(PREFIX_DRAMA_SEARCH)
+            ) {
                 BottomBar(navController = navController, currentRoute = currentRoute)
             }
         }
@@ -153,6 +182,27 @@ fun AppNavHost() {
                         app.container.settings.addHistory(word)
                         navController.navigateToSearch(word, 9, 1)
                     }
+                )
+            }
+
+            composable(ROUTE_DRAMA) {
+                var keyword by remember { mutableStateOf("") }
+                val vm: DramaViewModel = viewModel(factory = viewModelFactory {
+                    DramaViewModel(app.container.dramaRepository)
+                })
+                DramaScreen(
+                    listState = vm.list.collectAsStateWithLifecycle().value,
+                    hotState = vm.hot.collectAsStateWithLifecycle().value,
+                    baseUrl = vm.baseUrl,
+                    keyword = keyword,
+                    onKeywordChange = { keyword = it },
+                    onSearch = { kw ->
+                        app.container.settings.addHistory(kw)
+                        vm.search(kw)
+                    },
+                    onRetry = vm::load,
+                    onLoadMore = vm::loadMore,
+                    onDramaClick = { item -> navController.navigateToDramaPlay(item.id?.toString().orEmpty()) }
                 )
             }
 
@@ -253,6 +303,49 @@ fun AppNavHost() {
                     onVideoClick = { item -> navController.navigateToPlay(item.vid) }
                 )
             }
+
+            composable(
+                route = ROUTE_DRAMA_SEARCH,
+                arguments = listOf(navArgument("kw") { type = NavType.StringType })
+            ) { entry ->
+                val kw = entry.arguments?.getString("kw") ?: ""
+                var keyword by remember { mutableStateOf(kw) }
+                val vm: DramaViewModel = viewModel(factory = viewModelFactory {
+                    DramaViewModel(app.container.dramaRepository, kw)
+                })
+                DramaScreen(
+                    listState = vm.list.collectAsStateWithLifecycle().value,
+                    hotState = vm.hot.collectAsStateWithLifecycle().value,
+                    baseUrl = vm.baseUrl,
+                    keyword = keyword,
+                    onKeywordChange = { keyword = it },
+                    onSearch = { newKw ->
+                        if (newKw.isNotBlank()) {
+                            app.container.settings.addHistory(newKw)
+                            vm.search(newKw)
+                        }
+                    },
+                    onRetry = vm::load,
+                    onLoadMore = vm::loadMore,
+                    onDramaClick = { item -> navController.navigateToDramaPlay(item.id?.toString().orEmpty()) }
+                )
+            }
+
+            composable(
+                route = ROUTE_DRAMA_PLAY,
+                arguments = listOf(navArgument("did") { type = NavType.StringType })
+            ) { entry ->
+                val did = entry.arguments?.getString("did") ?: ""
+                val vm: DramaDetailViewModel = viewModel(factory = viewModelFactory {
+                    DramaDetailViewModel(app.container.dramaRepository, did)
+                })
+                DramaDetailScreen(
+                    state = vm.state.collectAsStateWithLifecycle().value,
+                    baseUrl = vm.baseUrl,
+                    onRetry = vm::load,
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
     }
 
@@ -273,6 +366,8 @@ fun AppNavHost() {
 private fun BottomBar(navController: NavHostController, currentRoute: String) {
     val selectedHome = currentRoute == ROUTE_HOME
     val selectedHot = currentRoute == ROUTE_HOT || currentRoute.startsWith(PREFIX_SEARCH)
+    val selectedDrama = currentRoute == ROUTE_DRAMA ||
+        currentRoute.startsWith(PREFIX_DRAMA_PLAY) || currentRoute.startsWith(PREFIX_DRAMA_SEARCH)
 
     NavigationBar(
         containerColor = SurfaceDark,
@@ -296,6 +391,19 @@ private fun BottomBar(navController: NavHostController, currentRoute: String) {
             onClick = { navController.navigateTab(ROUTE_HOT) },
             icon = { Icon(Icons.AutoMirrored.Default.List, contentDescription = "热搜") },
             label = { Text("热搜", fontSize = 11.sp) },
+            colors = NavigationBarItemDefaults.colors(
+                selectedIconColor = AccentOrange,
+                selectedTextColor = AccentOrange,
+                indicatorColor = Color.Transparent,
+                unselectedIconColor = TextTertiary,
+                unselectedTextColor = TextTertiary
+            )
+        )
+        NavigationBarItem(
+            selected = selectedDrama,
+            onClick = { navController.navigateTab(ROUTE_DRAMA) },
+            icon = { Icon(Icons.Default.Movie, contentDescription = "短剧") },
+            label = { Text("短剧", fontSize = 11.sp) },
             colors = NavigationBarItemDefaults.colors(
                 selectedIconColor = AccentOrange,
                 selectedTextColor = AccentOrange,

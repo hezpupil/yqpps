@@ -5,6 +5,7 @@ import android.content.pm.ApplicationInfo
 import com.youqu.vod.data.local.SettingsRepository
 import com.youqu.vod.data.remote.HttpFactory
 import com.youqu.vod.data.repo.DomainRepository
+import com.youqu.vod.data.repo.DramaRepository
 import com.youqu.vod.data.repo.UpdateRepository
 import com.youqu.vod.data.repo.VodRepository
 import com.youqu.vod.update.ApkDownloader
@@ -18,6 +19,7 @@ class AppContainer(context: Context) {
 
     val settings: SettingsRepository
     val repository: VodRepository
+    val dramaRepository: DramaRepository
     val updateRepository: UpdateRepository
     val apkDownloader: ApkDownloader
     val domainRepository: DomainRepository
@@ -33,6 +35,7 @@ class AppContainer(context: Context) {
 
         domainRepository = DomainRepository(settings, HttpFactory.createDownloadOkHttp())
         repository = VodRepository(api, settings, domainRepository)
+        dramaRepository = DramaRepository(api, settings, domainRepository)
         updateRepository = UpdateRepository(appContext, settings, HttpFactory.createDownloadOkHttp())
         apkDownloader = ApkDownloader(appContext, HttpFactory.createDownloadOkHttp())
     }

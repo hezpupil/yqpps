@@ -15,13 +15,21 @@ import com.youqu.vod.data.local.SettingsRepository
 object DirectConfig {
 
     /** 上游业务站点兜底值；token.php 会下发 base_url 覆盖它 */
-    const val DEFAULT_UPSTREAM = "https://sixth.xxcjpt.com"
+    const val DEFAULT_UPSTREAM = "https://monday.wzjlz.com"
 
     /** token.php 兜底地址（当网关域名下取不到 token.php 时尝试） */
     const val FALLBACK_TOKEN_URL = "https://yq-app.yqnb.lol/token.php"
 
     /** 可选访问密钥，与服务器 config.php 的 token_access_key 对应；空表示不校验 */
     const val TOKEN_ACCESS_KEY = ""
+
+    /**
+     * C 方案：凭证传输加密密钥（AES-128-ECB，16 字节 ASCII）。
+     * 必须与服务器 config.php 的 credential_key 完全一致。
+     * 这是「传输加密」密钥而非账号密码：账号密码不写在本文件、不进包，
+     * 而是由 token.php?action=credential 下发密文，App 在内存里解密后即时登录、不缓存。
+     */
+    const val CREDENTIAL_AES_KEY = "yq-cred-8kM2pX7z"
 
     /** 图片域名白名单（image.php 原始行为） */
     const val IMAGE_HOST = "beta.100njp.com"
