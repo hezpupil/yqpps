@@ -44,6 +44,8 @@ actor TokenProvider {
 
     private let kToken = "yq.direct.token"
     private let kDevice = "yq.direct.device"
+    /// 本地生成并持久化的干净 device（模拟浏览器现场生成，避免固定 device 被风控）
+    private let kLocalDevice = "yq.direct.local_device"
     private let kBaseUrl = "yq.direct.base_url"
     private let kImageHost = "yq.direct.image_host"
     private let kStreamHosts = "yq.direct.stream_hosts"
@@ -85,17 +87,35 @@ actor TokenProvider {
                 // 仓库无有效 token / 强制刷新 → 手机端登录换新 token 并回传仓库。
                 let credPayload = try await fetchCredential(base: base)
                 let (username, password) = try decryptSecret(credPayload.cipher)
-                let token = try await loginUpstream(
-                    baseUrl: credPayload.baseUrl,
-                    device: credPayload.device,
-                    username: username,
-                    password: password
-                )
-                try? await saveToken(base: base, token: token, device: credPayload.device)
+
+                // 多候选 device：本地生成的干净 device 优先（模拟浏览器现场生成），
+                // 服务器 credential 下发的 device 兜底。任一成功即用其 token/device。
+                let candidates = deviceCandidates(credPayload.device)
+                var lastLoginError = "无候选 device"
+                var token: String?
+                var usedDevice = ""
+                for dev in candidates {
+                    do {
+                        token = try await loginUpstream(
+                            baseUrl: credPayload.baseUrl,
+                            device: dev,
+                            username: username,
+                            password: password
+                        )
+                        usedDevice = dev
+                        break
+                    } catch {
+                        lastLoginError = error.localizedDescription
+                    }
+                }
+                guard let finalToken = token else {
+                    throw TokenError.server("上游登录失败(已试\(candidates.count)个device) · \(lastLoginError)")
+                }
+                try? await saveToken(base: base, token: finalToken, device: usedDevice)
 
                 let c = Credential(
-                    token: token,
-                    device: credPayload.device,
+                    token: finalToken,
+                    device: usedDevice,
                     baseUrl: credPayload.baseUrl,
                     imageHost: credPayload.imageHost,
                     streamHosts: credPayload.streamHosts
@@ -290,7 +310,8 @@ actor TokenProvider {
         guard let http = resp as? HTTPURLResponse else { throw TokenError.server("上游登录无响应") }
         guard (200..<300).contains(http.statusCode) else {
             let snippet = String(data: data, encoding: .utf8)?.prefix(120) ?? ""
-            throw TokenError.server("上游登录 HTTP \(http.statusCode) · \(snippet)")
+            let tail = String(device.suffix(6))
+            throw TokenError.server("上游登录 HTTP \(http.statusCode) [device=…\(tail)] · \(snippet)")
         }
         let decoded = try ResponseDecoder.decode(data)
         guard decoded.success else {
@@ -327,6 +348,28 @@ actor TokenProvider {
         }
         guard status == kCCSuccess else { return nil }
         return Data(outData.prefix(outLength))
+    }
+
+    /// 登录 device 候选（本地干净 device 优先，服务器下发 device 兜底，去重）
+    private func deviceCandidates(_ serverDevice: String) -> [String] {
+        var result: [String] = []
+        let local = localDevice()
+        if !local.isEmpty { result.append(local) }
+        let s = serverDevice.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !s.isEmpty && !result.contains(s) { result.append(s) }
+        return result
+    }
+
+    /// 本地 device：首次生成并持久化，之后固定复用（像浏览器 cookie）。
+    private func localDevice() -> String {
+        if let saved = defaults.string(forKey: kLocalDevice),
+           saved.count == 20,
+           saved.allSatisfy({ $0.isLowercase || $0.isNumber }) {
+            return saved
+        }
+        let fresh = randomDevice()
+        defaults.set(fresh, forKey: kLocalDevice)
+        return fresh
     }
 
     /// device 兜底：20 位小写字母数字

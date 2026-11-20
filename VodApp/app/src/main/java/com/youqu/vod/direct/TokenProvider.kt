@@ -32,8 +32,15 @@ class TokenProvider(
     context: Context,
     private val settings: SettingsRepository
 ) {
-    @Suppress("unused")
     private val appContext = context.applicationContext
+
+    /**
+     * 本地设备码持久化（模拟浏览器：首次打开现场生成，之后 cookie 持久化复用）。
+     * 不再依赖服务器 device_id.txt 的固定值——该值从服务器出口反复登录失败，
+     * 极可能已被上游 WAF 关联标记为风险设备（激活 200 但登录伪装 404）。
+     */
+    private val devicePrefs = appContext.getSharedPreferences("yq_direct_device", Context.MODE_PRIVATE)
+
     private val client = OkHttpClient.Builder()
         .connectTimeout(12, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
@@ -87,12 +94,29 @@ class TokenProvider(
                 // 仓库无有效 token / 强制刷新 → 手机端登录换新 token 并回传仓库。
                 val payload = fetchCredential(base)
                 val (username, password) = decryptSecret(payload.cipher)
-                val token = loginUpstream(payload.baseUrl, payload.device, username, password)
-                runCatching { saveToken(base, token, payload.device) }
+
+                // 多候选 device：本地生成的干净 device 优先（模拟浏览器现场生成），
+                // 服务器 credential 下发的 device 兜底。任一成功即用其 token/device。
+                var lastLoginError = "无候选 device"
+                var token: String? = null
+                var usedDevice = ""
+                for (dev in deviceCandidates(payload.device)) {
+                    try {
+                        token = loginUpstream(payload.baseUrl, dev, username, password)
+                        usedDevice = dev
+                        break
+                    } catch (e: Exception) {
+                        lastLoginError = e.message ?: e.javaClass.simpleName
+                    }
+                }
+                val finalToken = token ?: throw IOException(
+                    "上游登录失败(已试${deviceCandidates(payload.device).size}个device) · $lastLoginError"
+                )
+                runCatching { saveToken(base, finalToken, usedDevice) }
 
                 val credential = Credential(
-                    token = token,
-                    device = payload.device,
+                    token = finalToken,
+                    device = usedDevice,
                     baseUrl = payload.baseUrl
                 )
                 cached = credential
@@ -248,7 +272,8 @@ class TokenProvider(
             if (!resp.isSuccessful) {
                 // 带上设备激活状态 + 响应体片段，一次看清是 WAF 拦截页还是上游真实 404
                 val snippet = body.take(160).replace(Regex("\\s+"), " ")
-                throw IOException("上游登录 HTTP ${resp.code} [$lastActivate]${if (snippet.isNotBlank()) " · $snippet" else ""}")
+                val devTail = device.takeLast(6)
+                throw IOException("上游登录 HTTP ${resp.code} [$lastActivate device=…$devTail]${if (snippet.isNotBlank()) " · $snippet" else ""}")
             }
             val decoded = decodeUpstream(body)
             val code = decoded.optInt("code", -1)
@@ -306,6 +331,32 @@ class TokenProvider(
     @Synchronized
     fun invalidate() {
         cached = null
+    }
+
+    /**
+     * 登录 device 候选（按优先级）：
+     *  1. 本地生成并持久化的干净 device（首选，模拟浏览器现场生成，避免固定 device 被风控）
+     *  2. 服务器 credential 下发的 device（兜底）
+     * 两者去重，保证登录失败时能自动换设备重试。
+     */
+    private fun deviceCandidates(serverDevice: String): List<String> {
+        val result = LinkedHashSet<String>()
+        val local = localDevice()
+        if (local.isNotBlank()) result.add(local)
+        if (serverDevice.isNotBlank()) result.add(serverDevice.trim())
+        return result.toList()
+    }
+
+    /**
+     * 本地 device：首次调用生成 20 位随机串并持久化，之后固定复用（像浏览器 cookie）。
+     * 被风控时可通过 clearLocalDevice() 强制换一个。
+     */
+    private fun localDevice(): String {
+        val saved = devicePrefs.getString("device_id", "").orEmpty().trim()
+        if (Regex("^[a-z0-9]{20}$").matches(saved)) return saved
+        val fresh = randomDevice()
+        devicePrefs.edit().putString("device_id", fresh).apply()
+        return fresh
     }
 
     /** device 兜底：20 位小写字母数字，与上游 userCode 规则一致 */
