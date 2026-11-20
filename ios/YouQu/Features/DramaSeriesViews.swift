@@ -332,8 +332,8 @@ final class SeriesDetailViewModel: ObservableObject {
             timeObserver = nil
         }
         statusObservation?.invalidate(); statusObservation = nil
-        sizeObservation?.invalidate(); sizeObservation = nil
-        rateObservation?.invalidate(); rateObservation = nil
+        sizeObservation?.cancel(); sizeObservation = nil
+        rateObservation?.cancel(); rateObservation = nil
     }
 }
 

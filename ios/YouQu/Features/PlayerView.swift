@@ -144,7 +144,7 @@ final class PlayerViewModel: ObservableObject {
         }
         statusObservation?.invalidate()
         statusObservation = nil
-        sizeObservation?.invalidate()
+        sizeObservation?.cancel()
         sizeObservation = nil
     }
 }
