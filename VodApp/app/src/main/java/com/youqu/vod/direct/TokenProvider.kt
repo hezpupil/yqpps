@@ -13,17 +13,20 @@ import javax.crypto.Cipher
 import javax.crypto.spec.SecretKeySpec
 
 /**
- * 凭证提供者（C 方案：App 用自身网络出口登录上游）。
+ * 凭证提供者（凭证仓库模式）。
  *
- * 背景：服务器出口 IP 被上游 volc-dcdn WAF 拦截（伪装 404），无法再代 App 登录。
- * 新流程：
- *   一、向 token.php?action=credential 请求【加密的账号密码】+ device + base_url
- *      （服务器不访问上游，不受 WAF 影响）；
- *   二、App 在内存里用 CREDENTIAL_AES_KEY 解密得到 username/password；
- *   三、App 用【自己的网络出口】POST {base_url}/java/v2/login 换 token；
- *   四、账号密码仅存在于本次调用的局部变量，用完即弃，绝不落盘、不进缓存。
+ * 服务器出口被上游 volc-dcdn WAF 拦截（伪装 404），服务器不再代 App 登录上游。
+ * token.php 退化为纯「token 仓库」：只存取 token，不访问上游。闭环如下：
  *
- * 缓存的是会话凭证 token/device/baseUrl（不是账号密码），失效时整体重来一遍。
+ *   一、get() 先向仓库取缓存 token（可能是本机或其他设备之前回传的），有效直接用；
+ *   二、仓库为空 / need_refresh → 调 credential 接口拿【加密的账号密码】+ device + base_url；
+ *   三、App 在内存解密账号密码，用【手机自身网络出口】POST /java/v2/login 换 token；
+ *   四、把新 token 通过 action=save 回传仓库，供后期 / 其他设备复用；
+ *   五、App 用 token 请求上游鉴权失效时，UpstreamClient 调 get(forceRefresh=true)：
+ *       先 action=invalidate 上报旧 token 失效，再走二~四重新登录并覆盖仓库。
+ *
+ * 账号密码只存在于解密后的局部变量，用完即弃，绝不落盘、不进缓存。
+ * 本地 cached 只存会话凭证 token/device/baseUrl。
  */
 class TokenProvider(
     context: Context,
@@ -64,12 +67,23 @@ class TokenProvider(
         var lastError = "未知错误"
         for (base in urls) {
             try {
-                // 一、一次请求拿齐：加密账号密码 + device + base_url
+                if (forceRefresh) {
+                    // 鉴权失效：上报旧 token，让仓库标记 need_refresh；不再信任仓库缓存。
+                    cached?.token?.let { old -> runCatching { reportInvalid(base, old) } }
+                    cached = null
+                } else {
+                    // 常规取用：优先复用仓库缓存 token（含其他设备回传的）。
+                    fetchRepositoryToken(base)?.let { repo ->
+                        cached = repo
+                        return repo
+                    }
+                }
+
+                // 仓库无有效 token / 强制刷新 → 手机端登录换新 token 并回传仓库。
                 val payload = fetchCredential(base)
-                // 二、解密（账号密码只在这个局部作用域里存在）
                 val (username, password) = decryptSecret(payload.cipher)
-                // 三、用手机出口登录上游换 token
                 val token = loginUpstream(payload.baseUrl, payload.device, username, password)
+                runCatching { saveToken(base, token, payload.device) }
 
                 val credential = Credential(
                     token = token,
@@ -83,8 +97,20 @@ class TokenProvider(
             }
         }
         throw IllegalStateException(
-            "无法获取访问凭证：$lastError（请确认服务器 token.php 已部署 C 方案 credential 接口）"
+            "无法获取访问凭证：$lastError（请确认服务器 token.php 已部署凭证仓库版本）"
         )
+    }
+
+    /** 从仓库取缓存 token；need_refresh 或空 token 返回 null */
+    private fun fetchRepositoryToken(base: String): Credential? {
+        val json = callToken(base, "get")
+        if (json.optBoolean("need_refresh", false)) return null
+        val token = json.optString("token", "").trim()
+        if (token.isBlank()) return null
+        val device = json.optString("device", "").trim().ifBlank { randomDevice() }
+        val baseUrl = json.optString("base_url", DirectConfig.DEFAULT_UPSTREAM)
+            .trim().trimEnd('/').ifBlank { DirectConfig.DEFAULT_UPSTREAM }
+        return Credential(token, device, baseUrl)
     }
 
     /** 请求 token.php?action=credential 并解析全部字段 */
@@ -92,12 +118,42 @@ class TokenProvider(
         val json = callToken(base, "credential")
         val cipher = json.optString("cipher", "")
         if (cipher.isBlank()) {
-            throw IOException("token.php 未返回 cipher，请在服务器部署 C 方案 credential 接口")
+            throw IOException("token.php 未返回 cipher，请在服务器部署凭证仓库版本 token.php")
         }
         val device = json.optString("device", "").trim().ifBlank { randomDevice() }
         val baseUrl = json.optString("base_url", DirectConfig.DEFAULT_UPSTREAM)
             .trim().trimEnd('/').ifBlank { DirectConfig.DEFAULT_UPSTREAM }
         return CredPayload(cipher = cipher, device = device, baseUrl = baseUrl)
+    }
+
+    /** 上报旧 token 失效（尽力而为，失败不影响刷新主流程） */
+    private fun reportInvalid(base: String, token: String) {
+        callToken(base, "invalidate", mapOf("token" to token))
+    }
+
+    /** 回传新 token 到仓库（POST form，避免 token 出现在 URL 日志里） */
+    private fun saveToken(base: String, token: String, device: String) {
+        val url = buildString {
+            append(base)
+            append(if (base.contains('?')) '&' else '?')
+            append("action=save&_t=").append(System.currentTimeMillis())
+            if (DirectConfig.TOKEN_ACCESS_KEY.isNotEmpty()) {
+                append("&key=").append(DirectConfig.TOKEN_ACCESS_KEY)
+            }
+        }
+        val form = FormBody.Builder(Charsets.UTF_8)
+            .add("token", token)
+            .add("device", device)
+            .build()
+        val req = Request.Builder().url(url).post(form).build()
+        client.newCall(req).execute().use { resp ->
+            val body = resp.body?.string().orEmpty()
+            if (!resp.isSuccessful) throw IOException("token.php save HTTP ${resp.code}")
+            val json = JSONObject(body)
+            if (!json.optBoolean("ok", false)) {
+                throw IOException(json.optString("error", "token.php save 失败"))
+            }
+        }
     }
 
     /** cipher 单独走一次解密，返回 (username, password) */
@@ -116,8 +172,12 @@ class TokenProvider(
         return u to p
     }
 
-    /** 通用 token.php 调用 */
-    private fun callToken(base: String, action: String): JSONObject {
+    /** 通用 token.php GET 调用 */
+    private fun callToken(
+        base: String,
+        action: String,
+        extra: Map<String, String> = emptyMap()
+    ): JSONObject {
         val url = buildString {
             append(base)
             append(if (base.contains('?')) '&' else '?')
@@ -125,6 +185,9 @@ class TokenProvider(
             append("_t=").append(System.currentTimeMillis())
             if (DirectConfig.TOKEN_ACCESS_KEY.isNotEmpty()) {
                 append("&key=").append(DirectConfig.TOKEN_ACCESS_KEY)
+            }
+            extra.forEach { (k, v) ->
+                append('&').append(k).append('=').append(java.net.URLEncoder.encode(v, "UTF-8"))
             }
         }
         val req = Request.Builder()

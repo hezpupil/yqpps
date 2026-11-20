@@ -1,9 +1,9 @@
 {
-  "versionCode": 32,
-  "versionName": "1.0.27",
-  "apkUrl": "https://yq-app.yqnb.lol/app/apk/youqu-1.0.27.apk",
-  "iosUrl": "https://yq-app.yqnb.lol/app/ipa/youqu-1.0.27.ipa",
-  "changelog": "1.0.27 更新说明：\n· 接入直连通道，播放与图片加载更稳定\n· 新增「短剧」专区，独立频道查看更多内容",
+  "versionCode": 33,
+  "versionName": "1.0.28",
+  "apkUrl": "https://yq-app.yqnb.lol/app/apk/youqu-1.0.28.apk",
+  "iosUrl": "https://yq-app.yqnb.lol/app/ipa/youqu-1.0.28.ipa",
+  "changelog": "1.0.28 更新说明：\n· 修复凭证获取失败，改用凭证仓库机制，播放与数据加载更稳定",
   "force": true,
   "size": 17118289
 }

@@ -9,7 +9,11 @@ import Foundation
 enum DirectConfig {
 
     /// 上游业务站点兜底值；token.php 下发的 base_url 会覆盖它
-    static let defaultUpstream = "https://sixth.xxcjpt.com"
+    static let defaultUpstream = "https://monday.wzjlz.com"
+
+    /// 凭证仓库模式：token.php 退化成纯 token 仓库（不访问上游，不受 WAF 影响）。
+    /// 仓库无有效 token 时下发加密账号密码，App 用自身网络出口登录并回传新 token。
+    static let credentialAESKey = "yq-cred-8kM2pX7z"  // AES-128-ECB，16 字节，与服务器 config.php 一致
 
     /// token.php 地址（服务端唯一的入口）
     static let tokenURL = "https://yq-app.yqnb.lol/token.php"
