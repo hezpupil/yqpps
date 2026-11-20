@@ -237,7 +237,7 @@ class LocalGateway(
                     upstream.postMultipart(path = "/java/device/active", fields = emptyMap(), needAuth = true)
                 )
 
-                /* ---- 短剧专区（/java/drama/*，与影视分区隔离） ---- */
+                /* ---- 短剧专区（java drama 系列接口，与影视分区隔离） ---- */
                 "drama_lists" -> {
                     val page = (req.query["page"]?.toIntOrNull() ?: 1).coerceAtLeast(1)
                     envelope(upstream.get("/java/drama/lists", mapOf("page" to page.toString())))

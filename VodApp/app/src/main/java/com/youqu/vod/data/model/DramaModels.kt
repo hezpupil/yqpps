@@ -3,7 +3,7 @@ package com.youqu.vod.data.model
 /**
  * 短剧专区数据模型（与影视 VOD 完全隔离，字段不交叉）。
  *
- * 接口来源：/java/drama/* ，经 APP 内置网关直连、倒序 Base64 解码后返回。
+ * 接口来源：java drama 系列接口，经 APP 内置网关直连、倒序 Base64 解码后返回。
  * 字段用 Any? 接收数字/字符串漂移，读取时统一走 util/Format.kt。
  */
 

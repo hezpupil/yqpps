@@ -21,7 +21,7 @@ data class DramaPageResult(
 )
 
 /**
- * 短剧专区仓库：与影视 VodRepository 完全隔离，走 /java/drama/* 系列 action。
+ * 短剧专区仓库：与影视 VodRepository 完全隔离，走 java drama 系列接口。
  * 所有请求经 APP 内置网关直连上游，字段各自解析、不与影视混用。
  */
 class DramaRepository(
