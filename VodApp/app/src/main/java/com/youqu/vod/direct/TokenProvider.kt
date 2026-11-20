@@ -73,7 +73,8 @@ class TokenProvider(
                     cached = null
                 } else {
                     // 常规取用：优先复用仓库缓存 token（含其他设备回传的）。
-                    fetchRepositoryToken(base)?.let { repo ->
+                    // 仓库读取失败不致命（兼容旧版 token.php /  transient 网络），回退到 credential 登录。
+                    runCatching { fetchRepositoryToken(base) }.getOrNull()?.let { repo ->
                         cached = repo
                         return repo
                     }
