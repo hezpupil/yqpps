@@ -1,9 +1,9 @@
 {
-  "versionCode": 35,
-  "versionName": "1.0.30",
-  "apkUrl": "https://yq-app.yqnb.lol/app/apk/youqu-1.0.30.apk",
-  "iosUrl": "https://yq-app.yqnb.lol/app/ipa/youqu-1.0.30.ipa",
-  "changelog": "1.0.30 更新说明：\n· 彻底修复取数失败：改用本地设备码登录，规避设备风控",
+  "versionCode": 36,
+  "versionName": "1.0.31",
+  "apkUrl": "https://yq-app.yqnb.lol/app/apk/youqu-1.0.31.apk",
+  "iosUrl": "https://yq-app.yqnb.lol/app/ipa/youqu-1.0.31.ipa",
+  "changelog": "1.0.31 更新说明：\n· 修复取数失败：登录改用浏览器内核，规避上游风控",
   "force": true,
   "size": 17118289
 }

@@ -18,9 +18,9 @@
 	<string>APPL</string>
 	<!-- 版本号写在这里；CI 构建前会用 PlistBuddy 覆盖成 gradle 的 appVersionName / appVersionCode -->
 	<key>CFBundleShortVersionString</key>
-	<string>1.0.30</string>
+	<string>1.0.31</string>
 	<key>CFBundleVersion</key>
-	<string>35</string>
+	<string>36</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UILaunchScreen</key>

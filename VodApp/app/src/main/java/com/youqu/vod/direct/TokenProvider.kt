@@ -1,13 +1,20 @@
 package com.youqu.vod.direct
 
+import android.annotation.SuppressLint
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.util.Base64
+import android.webkit.JavascriptInterface
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import com.youqu.vod.data.local.SettingsRepository
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.io.IOException
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import javax.crypto.Cipher
 import javax.crypto.spec.SecretKeySpec
@@ -97,10 +104,12 @@ class TokenProvider(
 
                 // 多候选 device：本地生成的干净 device 优先（模拟浏览器现场生成），
                 // 服务器 credential 下发的 device 兜底。任一成功即用其 token/device。
+                val candidates = deviceCandidates(payload.device)
                 var lastLoginError = "无候选 device"
                 var token: String? = null
                 var usedDevice = ""
-                for (dev in deviceCandidates(payload.device)) {
+                // 第一轮：OkHttp 直连（快）
+                for (dev in candidates) {
                     try {
                         token = loginUpstream(payload.baseUrl, dev, username, password)
                         usedDevice = dev
@@ -109,8 +118,21 @@ class TokenProvider(
                         lastLoginError = e.message ?: e.javaClass.simpleName
                     }
                 }
+                // 第二轮：OkHttp 全失败 → WebView 浏览器网络栈兜底（绕 WAF 的 TLS/JA3 指纹拦截）
+                if (token == null) {
+                    lastLoginError = "OkHttp: $lastLoginError"
+                    for (dev in candidates) {
+                        try {
+                            token = loginViaWebView(payload.baseUrl, dev, username, password)
+                            usedDevice = dev
+                            break
+                        } catch (e: Exception) {
+                            lastLoginError += " | WebView: ${e.message ?: e.javaClass.simpleName}"
+                        }
+                    }
+                }
                 val finalToken = token ?: throw IOException(
-                    "上游登录失败(已试${deviceCandidates(payload.device).size}个device) · $lastLoginError"
+                    "上游登录失败(已试${candidates.size}个device) · $lastLoginError"
                 )
                 runCatching { saveToken(base, finalToken, usedDevice) }
 
@@ -314,6 +336,111 @@ class TokenProvider(
         } catch (e: Exception) {
             lastActivate = "激活异常:${e.message}"
             android.util.Log.w("TokenProvider", "设备激活失败（继续尝试登录）：${e.message}")
+        }
+    }
+
+    /**
+     * 用 WebView（Chromium 网络栈）执行登录，绕过 WAF 对 OkHttp 的 TLS/JA3 指纹拦截。
+     * 证据：两个 device 都 404、激活 OK、请求头/账号全对齐 → 只剩指纹差异。
+     * 流程：加载真实同源首页（拿到浏览器 TLS 指纹 + 会话）→ 页面内 fetch 激活 + 登录 →
+     * JS 把响应原文回传 → 复用 decodeUpstream 解出 token。
+     */
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun loginViaWebView(
+        baseUrl: String, device: String, username: String, password: String
+    ): String {
+        val root = baseUrl.trimEnd('/')
+        val holder = arrayOfNulls<String>(2) // [0]=status, [1]=body
+        val latch = CountDownLatch(1)
+        val main = Handler(Looper.getMainLooper())
+        val webRef = arrayOfNulls<WebView>(1)
+
+        // 账号密码用 URLEncoder 编码后拼进表单，避免特殊字符破坏 JS/表单
+        val encUser = java.net.URLEncoder.encode(username, "UTF-8")
+        val encPass = java.net.URLEncoder.encode(password, "UTF-8")
+
+        main.post {
+            try {
+                val wv = WebView(appContext)
+                webRef[0] = wv
+                wv.settings.javaScriptEnabled = true
+                wv.settings.userAgentString = DirectConfig.apiUserAgent(device)
+                wv.settings.domStorageEnabled = true
+                wv.settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
+
+                wv.addJavascriptInterface(object {
+                    @JavascriptInterface
+                    fun onResult(status: String, body: String) {
+                        holder[0] = status
+                        holder[1] = body
+                        latch.countDown()
+                    }
+                }, "YqBridge")
+
+                wv.webViewClient = object : WebViewClient() {
+                    override fun onPageFinished(view: WebView?, url: String?) {
+                        // 首页加载完成（含浏览器 TLS 会话），页面内 fetch 走同源真实浏览器栈
+                        val js = """
+                            (async function(){
+                              try {
+                                var bridge = window.YqBridge;
+                                // 先激活设备（与抓包一致），再登录
+                                await fetch('/java/device/${DirectConfig.DEVICE_CHANNEL}/$device?av1=&h265=');
+                                // Cookie 不手动设（forbidden header）：激活的 Set-Cookie 由 WebView
+                                // 自动保存并在同源 fetch 时带回，完全复刻 Safari 行为
+                                var r = await fetch('/java/v2/login', {
+                                  method: 'POST',
+                                  headers: {
+                                    'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+                                  },
+                                  body: 'username=$encUser&password=$encPass'
+                                });
+                                var t = await r.text();
+                                bridge.onResult(String(r.status), t);
+                              } catch (e) {
+                                bridge.onResult('JSERR', String(e));
+                              }
+                            })();
+                        """.trimIndent()
+                        view?.evaluateJavascript(js, null)
+                    }
+
+                    override fun onReceivedError(
+                        view: WebView?,
+                        request: android.webkit.WebResourceRequest?,
+                        error: android.webkit.WebResourceError?
+                    ) {
+                        holder[0] = "PAGEERR"
+                        holder[1] = "code=${error?.errorCode} ${error?.description}"
+                        latch.countDown()
+                    }
+                }
+
+                wv.loadUrl("$root/?ch=${DirectConfig.DEVICE_CHANNEL}&v=202611")
+            } catch (e: Exception) {
+                holder[0] = "WEBERR"
+                holder[1] = e.message ?: e.javaClass.simpleName
+                latch.countDown()
+            }
+        }
+
+        try {
+            if (!latch.await(30, TimeUnit.SECONDS)) throw IOException("WebView 登录超时(30s)")
+            val status = holder[0] ?: throw IOException("WebView 登录无结果")
+            val body = holder[1].orEmpty()
+            if (status != "200") {
+                throw IOException("WebView 登录 HTTP $status device=…${device.takeLast(6)} · ${body.take(120)}")
+            }
+            val decoded = decodeUpstream(body)
+            val code = decoded.optInt("code", -1)
+            if (code != 1 && code != 0 && code != 200) {
+                throw IOException("WebView 登录被拒 code=$code ${decoded.optString("message", "")}")
+            }
+            val token = decoded.optJSONObject("data")?.optString("token", "").orEmpty()
+            if (token.isBlank()) throw IOException("WebView 登录成功但未返回 token")
+            return token
+        } finally {
+            main.post { webRef[0]?.destroy() }
         }
     }
 
