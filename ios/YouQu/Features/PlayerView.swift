@@ -26,7 +26,7 @@ final class PlayerViewModel: ObservableObject {
     private var didRetry = false
     /// 视频宽高比（presentationSize）：nil=未知；<1 为竖屏视频
     @Published var videoRatio: Double?
-    private var sizeObservation: NSKeyValueObservation?
+    private var sizeObservation: AnyCancellable?
     /// 常驻倍速（控制条点击循环切换），长按松手后恢复到这里
     private var normalRate: Float = 1.0
     /// 与安卓 SPEED_STEPS 保持一致

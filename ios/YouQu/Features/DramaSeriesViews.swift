@@ -234,8 +234,8 @@ final class SeriesDetailViewModel: ObservableObject {
 
     private var timeObserver: Any?
     private var statusObservation: NSKeyValueObservation?
-    private var sizeObservation: NSKeyValueObservation?
-    private var rateObservation: NSKeyValueObservation?
+    private var sizeObservation: AnyCancellable?
+    private var rateObservation: AnyCancellable?
 
     func load(id: String) {
         isLoading = true
