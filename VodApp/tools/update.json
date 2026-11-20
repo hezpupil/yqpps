@@ -1,9 +1,9 @@
 {
-  "versionCode": 38,
-  "versionName": "1.0.33",
-  "apkUrl": "https://yq-app.yqnb.lol/app/apk/youqu-1.0.33.apk",
-  "iosUrl": "https://yq-app.yqnb.lol/app/ipa/youqu-1.0.33.ipa",
-  "changelog": "1.0.33 更新说明：\n· 短剧选集编号改为整型显示（修复 1.0 2.0 问题）",
+  "versionCode": 39,
+  "versionName": "1.0.34",
+  "apkUrl": "https://yq-app.yqnb.lol/app/apk/youqu-1.0.34.apk",
+  "iosUrl": "https://yq-app.yqnb.lol/app/ipa/youqu-1.0.34.ipa",
+  "changelog": "1.0.34 更新说明：\n· iOS 短剧播放页新增常驻返回按钮\n· 短剧支持竖屏全屏播放（两端）\n· 选集入口改为页面底部固定栏，点击弹浮层",
   "force": true,
   "size": 17118289
 }

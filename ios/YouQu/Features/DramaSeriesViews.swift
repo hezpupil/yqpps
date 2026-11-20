@@ -372,18 +372,84 @@ struct SeriesDetailView: View {
         .statusBar(hidden: isFullscreen)
     }
 
-    // MARK: 非全屏：播放器（按视频比例）+ 信息 + 选集入口
+    // MARK: 非全屏：播放器（按视频比例，常驻返回/控制条）+ 信息 + 底部选集栏
 
     private var inlineStage: some View {
         VStack(spacing: 0) {
-            playerBox
-                // 比例未知先按竖屏 9:16 占位（短剧绝大多数为竖屏），
-                // presentationSize 到达后 vm.videoRatio 更新自动切换真实比例
-                .aspectRatio(vm.videoRatio ?? 9 / 16, contentMode: .fit)
-                .frame(maxWidth: .infinity)
+            // 播放器区：常驻顶栏（返回）与底部控制条（播放/选集/全屏）
+            ZStack(alignment: .bottom) {
+                playerBox
+                    // 比例未知先按竖屏 9:16 占位（短剧绝大多数为竖屏），
+                    // presentationSize 到达后 vm.videoRatio 更新自动切换真实比例
+                    .aspectRatio(vm.videoRatio ?? 9 / 16, contentMode: .fit)
+                    .frame(maxWidth: .infinity)
+                VStack(spacing: 0) {
+                    topBar
+                    Spacer().allowsHitTesting(false)
+                    inlineControlBar
+                }
+            }
+            .background(Color.black)
             infoPanel
+            bottomEpBar
         }
         .background(Theme.background)
+    }
+
+    /// 内联控制条：播放/暂停 + 选集 + 进入竖屏全屏
+    private var inlineControlBar: some View {
+        HStack(spacing: 22) {
+            Button { vm.togglePlay() } label: {
+                Image(systemName: vm.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 20))
+            }
+            Button { showEpSheet = true } label: {
+                Image(systemName: "rectangle.stack")
+                    .font(.system(size: 16))
+            }
+            Spacer()
+            Button { applyFullscreen(true) } label: {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.system(size: 15))
+            }
+        }
+        .foregroundColor(.white)
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+        .background(Color.black.opacity(0.55))
+    }
+
+    /// 页面底部固定的选集入口栏（用户要求：底部选集按钮 → 弹浮层）
+    private var bottomEpBar: some View {
+        Button {
+            showEpSheet = true
+        } label: {
+            HStack {
+                Image(systemName: "rectangle.stack")
+                    .font(.system(size: 15))
+                    .foregroundColor(Theme.accent)
+                Text("选集 · \(currentEpLabel)")
+                    .font(.system(size: 14))
+                    .foregroundColor(Theme.textPrimary)
+                Spacer()
+                if let d = vm.detail {
+                    Text("共\(d.eps.count)集")
+                        .font(.system(size: 12))
+                        .foregroundColor(Theme.textSecondary)
+                }
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 12))
+                    .foregroundColor(Theme.textSecondary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(Theme.surfaceElevated)
+            .cornerRadius(10)
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(Theme.background.opacity(0.001))
     }
 
     private var infoPanel: some View {
@@ -403,32 +469,6 @@ struct SeriesDetailView: View {
                             .font(.system(size: 12))
                             .foregroundColor(Theme.accent)
                     }
-                    // 选集入口：打开浮层
-                    Button {
-                        showEpSheet = true
-                    } label: {
-                        HStack {
-                            Image(systemName: "rectangle.stack")
-                                .font(.system(size: 15))
-                                .foregroundColor(Theme.accent)
-                            Text("选集 · \(currentEpLabel)")
-                                .font(.system(size: 14))
-                                .foregroundColor(Theme.textPrimary)
-                            Spacer()
-                            Text("共\(d.eps.count)集")
-                                .font(.system(size: 12))
-                                .foregroundColor(Theme.textSecondary)
-                            Image(systemName: "chevron.up")
-                                .font(.system(size: 12))
-                                .foregroundColor(Theme.textSecondary)
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 12)
-                        .background(Theme.surfaceElevated)
-                        .cornerRadius(10)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.top, 4)
                 } else if vm.isLoading {
                     HStack {
                         Spacer()
@@ -467,7 +507,7 @@ struct SeriesDetailView: View {
             playerBox
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             VStack(spacing: 0) {
-                if showControls { topBar }
+                topBar   // 返回按钮常驻，控制条点击显隐
                 Spacer().allowsHitTesting(false)
                 if showControls { seriesControlBar }
             }
@@ -510,8 +550,11 @@ struct SeriesDetailView: View {
         .background(Color.black)
         .contentShape(Rectangle())
         .onTapGesture {
-            showControls.toggle()
-            scheduleControlsHide()
+            // 仅全屏态切换控制条显隐；非全屏控制条常驻（返回/全屏入口必须随时可用）
+            if isFullscreen {
+                showControls.toggle()
+                scheduleControlsHide()
+            }
         }
     }
 

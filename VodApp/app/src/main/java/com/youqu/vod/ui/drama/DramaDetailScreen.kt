@@ -173,7 +173,6 @@ fun DramaDetailScreen(
             } else {
                 Column(
                     modifier = modifier.fillMaxSize().background(OledBlack)
-                        .verticalScroll(rememberScrollState())
                 ) {
                     // 顶部返回条
                     Box(modifier = Modifier.fillMaxWidth().padding(4.dp)) {
@@ -191,8 +190,12 @@ fun DramaDetailScreen(
                         stage(Modifier.fillMaxSize())
                     }
 
-                    // 标题 + 简介 + 选集按钮
-                    Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                    // 标题 + 简介（可滚动，占满剩余空间）
+                    Column(
+                        modifier = Modifier.weight(1f)
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 12.dp, vertical = 10.dp)
+                    ) {
                         Text(data.drama?.title ?: "短剧", color = TextPrimary, fontSize = 17.sp)
                         val intro = data.drama?.intro
                         if (!intro.isNullOrBlank()) {
@@ -204,33 +207,36 @@ fun DramaDetailScreen(
                             Text(epText, color = AccentOrange, fontSize = 12.sp,
                                 modifier = Modifier.padding(top = 4.dp))
                         }
-                        // 选集入口：浮层形式
-                        Surface(
-                            onClick = { showEpSheet = true },
-                            color = SurfaceDark,
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 10.dp)
+                    }
+
+                    // 底部固定的选集入口栏：点击弹浮层选集
+                    Surface(
+                        onClick = { showEpSheet = true },
+                        color = SurfaceDark,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp)
+                            .navigationBarsPadding()
+                            .padding(bottom = 8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Default.Apps, contentDescription = null,
-                                    tint = AccentOrange, modifier = Modifier.size(18.dp))
-                                Text(
-                                    text = "选集" + if (selectedEp?.ep_no != null) {
-                                        " · 第${numText(selectedEp?.ep_no)}集"
-                                    } else {
-                                        ""
-                                    },
-                                    color = TextPrimary,
-                                    fontSize = 14.sp,
-                                    modifier = Modifier.padding(start = 8.dp).weight(1f)
-                                )
-                                Text("共${eps.size}集", color = TextSecondary, fontSize = 12.sp)
-                            }
+                            Icon(Icons.Default.Apps, contentDescription = null,
+                                tint = AccentOrange, modifier = Modifier.size(18.dp))
+                            Text(
+                                text = "选集" + if (selectedEp?.ep_no != null) {
+                                    " · 第${numText(selectedEp?.ep_no)}集"
+                                } else {
+                                    ""
+                                },
+                                color = TextPrimary,
+                                fontSize = 14.sp,
+                                modifier = Modifier.padding(start = 8.dp).weight(1f)
+                            )
+                            Text("共${eps.size}集", color = TextSecondary, fontSize = 12.sp)
                         }
                     }
                 }
