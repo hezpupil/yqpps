@@ -20,8 +20,8 @@ val hasSigningConfig = keystorePropsFile.exists()
 // 升级时改这里 + tools/update.json 的 versionCode/versionName/apkUrl/iosUrl/changelog；
 // CI 编译完会自动把 update.json 的 size 回填成本次 APK 真实字节数，
 // 再连同两个安装包一起上传到自有服务器（不创建 GitHub Release）。
-val appVersionCode = 37
-val appVersionName = "1.0.32"
+val appVersionCode = 38
+val appVersionName = "1.0.33"
 
 android {
     namespace = "com.youqu.vod"

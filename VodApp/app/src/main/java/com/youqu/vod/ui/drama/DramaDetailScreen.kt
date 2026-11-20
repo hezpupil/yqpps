@@ -57,6 +57,7 @@ import com.youqu.vod.player.PlayerStage
 import com.youqu.vod.player.VideoSurface
 import com.youqu.vod.ui.components.EmptyBox
 import com.youqu.vod.ui.components.ErrorBox
+import com.youqu.vod.util.numText
 import com.youqu.vod.ui.theme.AccentOrange
 import com.youqu.vod.ui.theme.OledBlack
 import com.youqu.vod.ui.theme.SurfaceDark
@@ -220,7 +221,7 @@ fun DramaDetailScreen(
                                     tint = AccentOrange, modifier = Modifier.size(18.dp))
                                 Text(
                                     text = "选集" + if (selectedEp?.ep_no != null) {
-                                        " · 第${selectedEp?.ep_no}集"
+                                        " · 第${numText(selectedEp?.ep_no)}集"
                                     } else {
                                         ""
                                     },
@@ -273,7 +274,7 @@ fun DramaDetailScreen(
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Text(
-                                                ep.ep_no?.toString() ?: "-",
+                                                numText(ep.ep_no).ifEmpty { "-" },
                                                 color = if (isSelected) Color.Black else TextPrimary,
                                                 fontSize = 13.sp
                                             )

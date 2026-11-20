@@ -10,6 +10,25 @@ fun anyToInt(value: Any?): Int = when (value) {
     else -> 0
 }
 
+/** 数字转显示文本：整数值不带小数点（1.0 → "1"），其余原样 */
+fun numText(value: Any?): String = when (value) {
+    null -> ""
+    is Number -> {
+        val d = value.toDouble()
+        if (d == Math.floor(d) && !d.isInfinite() && !d.isNaN()) {
+            if (d >= Int.MIN_VALUE.toDouble() && d <= Int.MAX_VALUE.toDouble()) {
+                d.toLong().toString()
+            } else {
+                d.toString()
+            }
+        } else {
+            value.toString()
+        }
+    }
+    is String -> value
+    else -> value.toString()
+}
+
 /** 网关字段统一转字符串 */
 fun anyToString(value: Any?): String = when (value) {
     null -> ""

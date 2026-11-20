@@ -22,7 +22,7 @@ struct SettingsView: View {
 
     private var appVersion: String {
         // CFBundleShortVersionString 由 MARKETING_VERSION 注入（CI 取 Android gradle 的 appVersionName）
-        (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "1.0.32"
+        (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "1.0.33"
     }
 
     var body: some View {
