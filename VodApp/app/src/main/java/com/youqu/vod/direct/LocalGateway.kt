@@ -256,8 +256,8 @@ class LocalGateway(
                                 "page" to page.toString(),
                                 "spm" to "drama.restore"
                             )
-                        ).also { injectPage(it, page) }
-                    )
+                        )
+                    ).also { injectPage(it, page) }
                 }
 
                 "drama_detail" -> {

@@ -12,10 +12,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.item
-import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
@@ -70,7 +70,7 @@ fun DramaScreen(
         SearchField(
             value = keyword,
             onValueChange = onKeywordChange,
-            onSubmit = { if (it.isNotBlank()) onSearch(it.trim()) },
+            onSubmit = { if (keyword.isNotBlank()) onSearch(keyword.trim()) },
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
         )
 
@@ -123,7 +123,7 @@ fun DramaScreen(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        itemsIndexed(page.list) { index, item ->
+                        gridItemsIndexed(page.list) { index, item ->
                             DramaCard(
                                 item = item,
                                 coverUrl = GatewayUrls.image(baseUrl, item.cover.orEmpty()),
