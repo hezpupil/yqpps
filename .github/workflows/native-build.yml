@@ -1,0 +1,87 @@
+name: 编译 Go 短剧核心（native）
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.10'
+          cache-dependency-path: native/go.sum
+      - name: 安装 Android NDK
+        id: ndk
+        run: |
+          export ANDROID_HOME=$RUNNER_TEMP/android-sdk
+          export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358
+          mkdir -p "$ANDROID_HOME"
+          curl -sSL -o /tmp/ndk.zip https://dl.google.com/android/repository/android-ndk-r28c-linux.zip
+          unzip -q /tmp/ndk.zip -d "$ANDROID_HOME/ndk-tmp"
+          mv "$ANDROID_HOME/ndk-tmp/android-ndk-r28c" "$ANDROID_NDK_HOME"
+          echo "ndk=$ANDROID_NDK_HOME" >> $GITHUB_OUTPUT
+      - name: 编译 arm64-v8a
+        working-directory: native
+        env:
+          CGO_ENABLED: '1'
+          GOOS: android
+          GOARCH: arm64
+          GOPROXY: https://goproxy.cn,direct
+          GOSUMDB: 'off'
+        run: |
+          CC="${{ steps.ndk.outputs.ndk }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
+          go build -trimpath -buildmode=c-shared -ldflags='-s -w' \
+            -o ../VodApp/app/src/main/jniLibs/arm64-v8a/libyouqu_duanju.so ./bridge
+      - name: 编译 armeabi-v7a
+        working-directory: native
+        env:
+          CGO_ENABLED: '1'
+          GOOS: android
+          GOARCH: arm
+          GOARM: '7'
+          GOPROXY: https://goproxy.cn,direct
+          GOSUMDB: 'off'
+        run: |
+          CC="${{ steps.ndk.outputs.ndk }}/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi24-clang"
+          go build -trimpath -buildmode=c-shared -ldflags='-s -w' \
+            -o ../VodApp/app/src/main/jniLibs/armeabi-v7a/libyouqu_duanju.so ./bridge
+      - name: 上传 .so
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-android-so
+          path: VodApp/app/src/main/jniLibs/*/libyouqu_duanju.so
+          retention-days: 7
+
+  build-ios:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.10'
+          cache-dependency-path: native/go.sum
+      - name: 编译 iOS arm64 静态库
+        working-directory: native
+        env:
+          CGO_ENABLED: '1'
+          GOOS: darwin
+          GOARCH: arm64
+          GOPROXY: https://goproxy.cn,direct
+          GOSUMDB: 'off'
+        run: |
+          mkdir -p ../ios/YouQuCore
+          CC=$(xcrun -f clang)
+          CGO_CFLAGS="-target arm64-apple-ios13.0" \
+          CGO_LDFLAGS="-target arm64-apple-ios13.0" \
+            go build -trimpath -buildmode=c-archive -ldflags='-s -w' \
+              -o ../ios/YouQuCore/libYouQuDuanju.a ./bridge
+          cp ../ios/YouQuCore/libYouQuDuanju.h ../ios/YouQuCore/include.h 2>/dev/null || true
+      - name: 上传静态库
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-ios-lib
+          path: ios/YouQuCore/*
+          retention-days: 7
