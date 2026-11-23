@@ -145,14 +145,18 @@ fun DramaScreen(
                             DramaCard(
                                 item = item,
                                 coverUrl = item.cover.orEmpty().let { c ->
-                                    if (c.startsWith("http", ignoreCase = true)) c
-                                    else GatewayUrls.image(baseUrl, c)
+                                    when {
+                                        c.isBlank() -> ""
+                                        c.startsWith("http", ignoreCase = true) -> c
+                                        c.startsWith("data:", ignoreCase = true) ||
+                                            c.startsWith("content:", ignoreCase = true) -> c
+                                        // 第三方模块可能返回相对路径；短剧没有可用网关 base 时不拼无效地址
+                                        baseUrl.isBlank() -> ""
+                                        else -> GatewayUrls.image(baseUrl, c)
+                                    }
                                 },
                                 onClick = { onDramaClick(item) }
                             )
-                            if (index == page.list.size - 1 && page.more) {
-                                LaunchedEffect(Unit) { onLoadMore() }
-                            }
                         }
                         if (page.more) {
                             item {
@@ -162,6 +166,8 @@ fun DramaScreen(
                                 ) {
                                     CircularProgressIndicator(color = AccentOrange)
                                 }
+                                // 只在底部加载条触发一次；模块忽略分页时会由 ViewModel 关掉 more
+                                LaunchedEffect(page.list.size) { onLoadMore() }
                             }
                         }
                     }
