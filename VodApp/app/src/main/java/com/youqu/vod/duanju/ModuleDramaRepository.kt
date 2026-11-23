@@ -7,6 +7,8 @@ import com.youqu.vod.data.model.DramaEpisode
 import com.youqu.vod.data.model.DramaInfo
 import com.youqu.vod.data.model.DramaItem
 import com.youqu.vod.data.repo.DramaPageResult
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -31,11 +33,104 @@ class ModuleDramaRepository(
     /** 详情页与播放页共用同一份详情，避免进入播放页时重复请求详情造成卡顿 */
     private val detailCache = LinkedHashMap<String, DramaDetailData>()
 
-    init {
+    /* ---------- 生效源 ---------- */
+
+    private val sourceLock = Any()
+    private var cachedModules: List<SourceModule>? = null
+    private var cachedModulesAt = 0L
+
+    /**
+     * 模块列表缓存。列表页每次翻页都会问一次"当前用哪个源"，
+     * 每次都过 JNI 会明显拖慢切页，这里做短 TTL 缓存；装卸/启用变化时显式失效。
+     */
+    private val modulesTtlMs = 5_000L
+
+    /** 模块装卸、启用状态或默认源变化后调用 */
+    fun invalidateSourceCache() {
+        synchronized(sourceLock) {
+            cachedModules = null
+            cachedModulesAt = 0L
+        }
+    }
+
+    /**
+     * 源变化版本号：模块管理页装卸/启用/切源后自增。
+     * 短剧页回到前台时比对，变化了才重新拉数据，避免每次切页都白跑一次请求。
+     */
+    @Volatile
+    var sourceRevision: Long = 0L
+        private set
+
+    fun bumpSourceRevision() {
+        sourceRevision++
+        invalidateSourceCache()
+        clearDetailCache()
+    }
+
+    /**
+     * 核心初始化要读模块清单与缓存，不适合放在 App 启动的主线程上，
+     * 这里改为首次真正取数据时在 IO 线程完成（initialize 本身幂等）。
+     */
+    @Volatile
+    private var coreReady = false
+
+    private fun ensureCore() {
+        if (coreReady) return
         NativeCore.initialize(context)
+        coreReady = true
     }
 
     val baseUrl: String get() = ""
+
+    /** 已安装模块（走缓存，避免每次请求都过 JNI） */
+    private suspend fun modules(): List<SourceModule> {
+        synchronized(sourceLock) {
+            val cached = cachedModules
+            if (cached != null && System.currentTimeMillis() - cachedModulesAt < modulesTtlMs) {
+                return cached
+            }
+        }
+        val result = call { put("action", "modules") }
+        val arr = (result as? ApiResult.Ok)?.value?.optJSONArray("items") ?: JSONArray()
+        val list = (0 until arr.length()).mapNotNull { i ->
+            arr.optJSONObject(i)?.let { o -> SourceModule.from(o).copy(installed = true) }
+        }
+        synchronized(sourceLock) {
+            cachedModules = list
+            cachedModulesAt = System.currentTimeMillis()
+        }
+        return list
+    }
+
+    /** 当前生效源 id；无可用模块时返回 null */
+    suspend fun currentSourceId(): String? = activeSource()
+
+    /** 当前生效源的显示名，用于顶栏标识 */
+    suspend fun currentSourceName(): String? {
+        val id = activeSource() ?: return null
+        return modules().firstOrNull { it.id == id }?.displayName
+    }
+
+    /** 可切换的数据源：已启用、加载无错误，成人模块需用户已确认年龄 */
+    suspend fun sourceOptions(): ApiResult<List<DramaSourceOption>> {
+        val all = modules()
+        if (all.isEmpty()) return ApiResult.Err(noModuleHint)
+        val usable = all.filter { m ->
+            m.id.isNotBlank() && !m.isBroken && preferences.isEnabled(m.id) &&
+                (!m.adult || preferences.adultConfirmed)
+        }.map { DramaSourceOption(id = it.id, name = it.displayName, adult = it.adult) }
+        return if (usable.isEmpty()) ApiResult.Err(noModuleHint) else ApiResult.Ok(usable)
+    }
+
+    /**
+     * 切换当前使用的短剧源。
+     * 同时写入默认源，保证下次启动仍是用户选中的这个；
+     * 并清掉源缓存与详情缓存，避免旧源数据串台。
+     */
+    fun switchSource(id: String) {
+        preferences.setPreferredSource(id)
+        bumpSourceRevision()
+    }
 
     /** 首页列表。category 为空时按当前模块使用默认分类 */
     suspend fun lists(page: Int, category: String? = null): ApiResult<DramaPageResult> {
@@ -73,14 +168,9 @@ class ModuleDramaRepository(
      * 成人模块只有用户确认过年龄限制后才会被自动选中。
      */
     private suspend fun activeSource(): String? {
-        val result = call { put("action", "modules") }
-        val arr = (result as? ApiResult.Ok)?.value?.optJSONArray("items") ?: return null
-        val candidates = (0 until arr.length()).mapNotNull { i ->
-            arr.optJSONObject(i)?.let { o ->
-                val id = o.optString("id")
-                Triple(id, o.optBoolean("adult"), o.optString("error"))
-            }
-        }.filter { it.first.isNotBlank() && it.third.isBlank() }
+        val candidates = modules()
+            .filter { it.id.isNotBlank() && !it.isBroken }
+            .map { Triple(it.id, it.adult, it.error) }
 
         val preferred = preferences.preferredSource
         if (preferred != null && candidates.any { it.first == preferred } &&
@@ -203,15 +293,22 @@ class ModuleDramaRepository(
 
     /* ---------- 内部工具 ---------- */
 
+    /**
+     * 统一出口：JNI 调用是同步阻塞的（网络请求在 Go 侧完成），
+     * 必须切到 IO 线程，否则会在主线程上把切页卡住。
+     */
     private suspend fun call(build: JSONObject.() -> Unit): ApiResult<JSONObject?> =
-        try {
-            when (val r = NativeCore.call(build)) {
-                is NativeCore.CoreResult.Ok -> ApiResult.Ok(r.data)
-                is NativeCore.CoreResult.Err -> ApiResult.Err(r.message)
+        withContext(Dispatchers.IO) {
+            try {
+                ensureCore()
+                when (val r = NativeCore.call(build)) {
+                    is NativeCore.CoreResult.Ok -> ApiResult.Ok(r.data)
+                    is NativeCore.CoreResult.Err -> ApiResult.Err(r.message)
+                }
+            } catch (t: Throwable) {
+                android.util.Log.e("ModuleDramaRepository", "短剧核心调用异常", t)
+                ApiResult.Err("短剧核心调用异常：${t.message ?: "未知错误"}")
             }
-        } catch (t: Throwable) {
-            android.util.Log.e("ModuleDramaRepository", "短剧核心调用异常", t)
-            ApiResult.Err("短剧核心调用异常：${t.message ?: "未知错误"}")
         }
 
     private fun <T, R> ApiResult<T>.map(transform: (T) -> R): ApiResult<R> = when (this) {
