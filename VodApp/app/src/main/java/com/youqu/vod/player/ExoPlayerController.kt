@@ -11,6 +11,7 @@ import androidx.media3.common.VideoSize
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -71,9 +72,17 @@ class ExoPlayerController(
                         "Accept" to "*/*"
                     )
                 )
-            // 已知是 HLS（m3u8.php / 本地代理均返回 m3u8），显式用 HlsMediaSource 最稳。
-            val mediaSource = HlsMediaSource.Factory(dsFactory)
-                .createMediaSource(MediaItem.fromUri(Uri.parse(url)))
+            // 按实际媒体类型选 MediaSource：
+            // - 短剧模块 resolve 返回 .mp4（本地代理/公开试看地址），必须用 Progressive；
+            //   若误用 HlsMediaSource 解析 mp4 会失败，表现为黑屏 + 失败覆盖层。
+            // - 影视网关/local m3u8.php 返回播放列表，走 HlsMediaSource。
+            val mediaItem = MediaItem.fromUri(Uri.parse(url))
+            val pathOnly = url.substringBefore('?').substringBefore('#')
+            val mediaSource = if (pathOnly.endsWith(".m3u8", ignoreCase = true)) {
+                HlsMediaSource.Factory(dsFactory).createMediaSource(mediaItem)
+            } else {
+                ProgressiveMediaSource.Factory(dsFactory).createMediaSource(mediaItem)
+            }
             exo.setMediaSource(mediaSource)
             exo.prepare()
             exo.playWhenReady = true
