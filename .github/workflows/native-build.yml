@@ -40,7 +40,7 @@ jobs:
           export CGO_LDFLAGS="--target=aarch64-linux-android24 -Wl,-z,max-page-size=16384"
           set +e
           go build -trimpath -buildmode=c-shared -ldflags='-s -w' \
-            -o ../VodApp/app/src/main/jniLibs/arm64-v8a/libyouqu_duanju.so ./bridge 2>&1 | tee /tmp/build64.log
+            -o ../VodApp/app/src/main/jniLibs/arm64-v8a/libyouqu_duanju.so ./bridge_android 2>&1 | tee /tmp/build64.log
           CODE=${PIPESTATUS[0]}
           echo "BUILD_EXIT=$CODE"
           { echo '```'; cat /tmp/build64.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
@@ -60,7 +60,7 @@ jobs:
           export CGO_CFLAGS="--target=armv7a-linux-androideabi24 -I$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include"
           export CGO_LDFLAGS="--target=armv7a-linux-androideabi24 -Wl,-z,max-page-size=16384"
           go build -trimpath -buildmode=c-shared -ldflags='-s -w' \
-            -o ../VodApp/app/src/main/jniLibs/armeabi-v7a/libyouqu_duanju.so ./bridge
+            -o ../VodApp/app/src/main/jniLibs/armeabi-v7a/libyouqu_duanju.so ./bridge_android
       - name: 上传 .so
         uses: actions/upload-artifact@v4
         with:
@@ -86,12 +86,12 @@ jobs:
           GOSUMDB: 'off'
         run: |
           mkdir -p ../ios/YouQuCore
-          CC=$(xcrun -f clang)
-          CGO_CFLAGS="-target arm64-apple-ios13.0" \
-          CGO_LDFLAGS="-target arm64-apple-ios13.0" \
-            go build -trimpath -buildmode=c-archive -ldflags='-s -w' \
-              -o ../ios/YouQuCore/libYouQuDuanju.a ./bridge
-          cp ../ios/YouQuCore/libYouQuDuanju.h ../ios/YouQuCore/include.h 2>/dev/null || true
+          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          export CC="$(xcrun -f clang)"
+          export CGO_CFLAGS="-target arm64-apple-ios13.0 -isysroot $SDK"
+          export CGO_LDFLAGS="-target arm64-apple-ios13.0 -isysroot $SDK"
+          go build -trimpath -buildmode=c-archive -ldflags='-s -w' \
+            -o ../ios/YouQuCore/libYouQuDuanju.a ./bridge
       - name: 上传静态库
         uses: actions/upload-artifact@v4
         with:
