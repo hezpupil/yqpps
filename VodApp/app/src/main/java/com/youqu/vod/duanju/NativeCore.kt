@@ -31,11 +31,15 @@ object NativeCore {
     /**
      * 向核心发送一个 JSON 请求，返回 JSON 字符串。
      * 与 guoapp NativeRequest 协议一致：{"action":"...", ...} -> {"ok":bool,"data":...}
+     *
+     * 注意：Go 侧 goja 运行时不是并发安全的，核心也没有全局锁，
+     * 所以所有入口都通过 [call] / [initialize] 的同步锁串行调用，禁止直接并发调本方法。
      */
     @JvmStatic
     external fun nativeRequest(json: String): String
 
     /** 请求封装：核心不可用时返回统一的错误包 */
+    @Synchronized
     fun request(json: String): String {
         if (!loaded) return """{"ok":false,"error":"短剧核心未加载"}"""
         return try {
@@ -84,7 +88,11 @@ object NativeCore {
         appContext?.let { initialize(it) }
     }
 
-    /** 构造请求并解析 envelope，data 为 null 表示失败，error 带可读原因 */
+    /**
+     * 构造请求并解析 envelope，data 为 null 表示失败，error 带可读原因。
+     * 用类级锁串行化：goja 运行时不允许并发，且多个页面同时拉数据时会撞车。
+     */
+    @Synchronized
     fun call(build: JSONObject.() -> Unit): CoreResult {
         ensureInitialized()
         if (!loaded) return CoreResult.Err("短剧核心未加载")
