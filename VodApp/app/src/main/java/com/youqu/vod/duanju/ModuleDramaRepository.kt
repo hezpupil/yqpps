@@ -16,11 +16,14 @@ import org.json.JSONObject
  * 与影视 VodRepository、旧 hezi1 DramaRepository 完全隔离：
  * 所有数据来自 NativeCore，映射到既有 DramaModels，UI 层无需感知数据源切换。
  */
-class ModuleDramaRepository(private val context: Context) {
+class ModuleDramaRepository(
+    private val context: Context,
+    private val preferences: ModulePreferences
+) {
 
-    private val source = "hongguo"
-    /** 首页默认分类：真人短剧。空串表示混合推荐 */
+    /** 首页默认分类：仅红果支持；其他模块用空串走各自推荐流 */
     private val homeCategory = "short_play"
+    private val noModuleHint = "尚未安装或启用任何短剧模块，请到短剧页右上角「模块」安装并启用"
 
     /** 详情页与播放页共用同一份详情，避免进入播放页时重复请求详情造成卡顿 */
     private val detailCache = LinkedHashMap<String, DramaDetailData>()
@@ -31,27 +34,62 @@ class ModuleDramaRepository(private val context: Context) {
 
     val baseUrl: String get() = ""
 
-    /** 首页列表。category 为空时用默认短剧分类 */
-    suspend fun lists(page: Int, category: String = homeCategory): ApiResult<DramaPageResult> = call {
-        put("action", "catalog")
-        put("source", source)
-        put("category", category)
-        put("page", page)
-    }.map { d -> parsePage(d, page) }
+    /** 首页列表。category 为空时按当前模块使用默认分类 */
+    suspend fun lists(page: Int, category: String? = null): ApiResult<DramaPageResult> {
+        val src = activeSource() ?: return ApiResult.Err(noModuleHint)
+        return call {
+            put("action", "catalog")
+            put("source", src)
+            put("category", category ?: if (src == "hongguo") homeCategory else "")
+            put("page", page)
+        }.map { d -> parsePage(d, page) }
+    }
 
     /** 搜索：核心返回 items 结构，与 catalog 一致 */
-    suspend fun search(keyword: String, page: Int): ApiResult<DramaPageResult> = call {
-        put("action", "search")
-        put("source", source)
-        put("query", keyword)
-        put("page", page)
-    }.map { d -> parsePage(d, page) }
+    suspend fun search(keyword: String, page: Int): ApiResult<DramaPageResult> {
+        val src = activeSource() ?: return ApiResult.Err(noModuleHint)
+        return call {
+            put("action", "search")
+            put("source", src)
+            put("query", keyword)
+            put("page", page)
+        }.map { d -> parsePage(d, page) }
+    }
 
     /** 热搜词：核心 suggestions/榜单，失败时回退空（UI 会隐藏） */
-    suspend fun hotWords(): ApiResult<List<String>> = call {
-        put("action", "categories")
-        put("source", source)
-    }.map { d -> parseCategories(d) }
+    suspend fun hotWords(): ApiResult<List<String>> {
+        val src = activeSource() ?: return ApiResult.Err(noModuleHint)
+        return call {
+            put("action", "categories")
+            put("source", src)
+        }.map { d -> parseCategories(d) }
+    }
+
+    /**
+     * 当前生效的短剧源：用户指定的默认源 > 红果 > 其他已启用模块。
+     * 成人模块只有用户确认过年龄限制后才会被自动选中。
+     */
+    private suspend fun activeSource(): String? {
+        val result = call { put("action", "modules") }
+        val arr = (result as? ApiResult.Ok)?.value?.optJSONArray("items") ?: return null
+        val candidates = (0 until arr.length()).mapNotNull { i ->
+            arr.optJSONObject(i)?.let { o ->
+                val id = o.optString("id")
+                Triple(id, o.optBoolean("adult"), o.optString("error"))
+            }
+        }.filter { it.first.isNotBlank() && it.third.isBlank() }
+
+        val preferred = preferences.preferredSource
+        if (preferred != null && candidates.any { it.first == preferred } &&
+            preferences.isEnabled(preferred) &&
+            (!candidates.first { it.first == preferred }.second || preferences.adultConfirmed)
+        ) return preferred
+
+        candidates.firstOrNull { it.first == "hongguo" && preferences.isEnabled(it.first) }?.let { return it.first }
+        return candidates.firstOrNull {
+            preferences.isEnabled(it.first) && (!it.second || preferences.adultConfirmed)
+        }?.first
+    }
 
     /** 详情：drama + chapters。chapters 的 videoUrl 为内部 scheme，需 resolve */
     suspend fun detail(id: String): ApiResult<DramaDetailData> {
