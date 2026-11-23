@@ -29,24 +29,39 @@ jobs:
           ref: v1.0.1
           path: guoapp/native/modules/huangguoai
 
-      - name: 安装 Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.26.10'
-          cache-dependency-path: guoapp/native/go.sum
+      - name: 安装 Go 并预编译 harness
+        working-directory: guoapp/native
+        run: |
+          go build -o /tmp/moduletool ./cmd/moduletool
+          echo "harness built"
 
-      - name: 【红果】初始化 + 分类 + 首页列表
+      - name: 【红果】catalog 单独测试（带超时）
         working-directory: guoapp/native
         continue-on-error: true
         run: |
-          go run ./cmd/moduletool ./modules/hongguo \
-            '{"action":"categories","source":"hongguo"}' \
-            '{"action":"catalog","source":"hongguo","category":"short_play","page":1}'
+          echo "=== 红果 catalog short_play p1 ==="
+          timeout 120 /tmp/moduletool ./modules/hongguo \
+            '{"action":"catalog","source":"hongguo","category":"short_play","page":1}' 2>&1 | tail -5
+          echo "EXIT=${PIPESTATUS[0]}"
 
-      - name: 【黄果AI】初始化 + 分类 + 榜单
+      - name: 【红果】detail 测试
         working-directory: guoapp/native
         continue-on-error: true
         run: |
-          go run ./cmd/moduletool ./modules/huangguoai \
-            '{"action":"categories","source":"huangguoai"}' \
-            '{"action":"rankings","source":"huangguoai","board":"huangguo-hot"}'
+          timeout 120 /tmp/moduletool ./modules/hongguo \
+            '{"action":"catalog","source":"hongguo","category":"","page":1}' 2>&1 | head -c 2500
+          echo ""
+          echo "EXIT=${PIPESTATUS[0]}"
+
+      - name: 【黄果AI】榜单/列表测试
+        working-directory: guoapp/native
+        continue-on-error: true
+        run: |
+          echo "=== 黄果AI catalog ai-duanju ==="
+          timeout 120 /tmp/moduletool ./modules/huangguoai \
+            '{"action":"catalog","source":"huangguoai","category":"ai-duanju","page":1}' 2>&1 | head -c 2500
+          echo ""
+          echo "=== 黄果AI rankings ==="
+          timeout 120 /tmp/moduletool ./modules/huangguoai \
+            '{"action":"rankings","source":"huangguoai","board":"huangguo-hot","page":1}' 2>&1 | head -c 2500
+          echo ""
