@@ -55,7 +55,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: native-android-so
-          path: VodApp/app/src/main/jniLibs/*/libyouqu_duanju.so
+          path: VodApp/app/src/main/jniLibs
           retention-days: 7
 
   build:
@@ -67,6 +67,13 @@ jobs:
         with:
           name: native-android-so
           path: VodApp/app/src/main/jniLibs
+
+      - name: 校验 .so 已就位
+        run: |
+          echo "=== jniLibs 目录树 ==="
+          find VodApp/app/src/main/jniLibs -type f -exec ls -lh {} \;
+          find VodApp/app/src/main/jniLibs -name 'libyouqu_duanju.so' | grep -q . \
+            || { echo "::error::未找到 libyouqu_duanju.so"; exit 1; }
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -198,6 +205,9 @@ jobs:
 
       - name: Report artifact info
         run: |
+          # 校验 Go 核心 .so 是否真的打进 APK
+          echo "=== APK 内的 native libs ==="
+          unzip -l VodApp/app/build/outputs/apk/release/*.apk 2>/dev/null | grep -i "libyouqu_duanju\|\.so" || echo "⚠️ APK 内未发现 .so"
           # 供填写 VodApp/tools/update.json 的 size 字段与校验发布包使用
           for f in VodApp/app/build/outputs/apk/release/*.apk; do
             [ -f "$f" ] || continue
