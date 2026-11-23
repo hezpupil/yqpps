@@ -33,6 +33,9 @@ class DramaViewModel(
     private var keyword: String = initialKeyword.trim()
 
     private var page = 1
+    private var loadingMore = false
+    /** 第三方模块可能忽略 page 参数，限制总量避免无限追加把页面拖崩 */
+    private val maxItems = 300
 
     init { load() }
 
@@ -43,9 +46,13 @@ class DramaViewModel(
             if (keyword.isEmpty()) {
                 launch {
                     _hot.value = UiState.Loading
-                    _hot.value = when (val r = repository.hotWords()) {
-                        is ApiResult.Ok -> UiState.Success(r.value)
-                        is ApiResult.Err -> UiState.Error(r.message)
+                    _hot.value = try {
+                        when (val r = repository.hotWords()) {
+                            is ApiResult.Ok -> UiState.Success(r.value)
+                            is ApiResult.Err -> UiState.Error(r.message)
+                        }
+                    } catch (t: Throwable) {
+                        UiState.Error("热搜加载失败：${t.message ?: "未知错误"}")
                     }
                 }
             }
@@ -60,32 +67,58 @@ class DramaViewModel(
 
     fun loadMore() {
         val current = _list.value as? UiState.Success ?: return
-        if (!current.data.more) return
+        if (!current.data.more || loadingMore) return
+        if (current.data.list.size >= maxItems) {
+            _list.value = UiState.Success(current.data.copy(more = false))
+            return
+        }
+        loadingMore = true
         viewModelScope.launch {
-            val next = page + 1
-            val r = if (keyword.isEmpty()) repository.lists(next) else repository.search(keyword, next)
-            when (r) {
-                is ApiResult.Ok -> {
-                    page = next
-                    _list.value = UiState.Success(
-                        DramaPageResult(
-                            list = current.data.list + r.value.list,
-                            page = r.value.page,
-                            more = r.value.more
-                        )
-                    )
+            try {
+                val next = page + 1
+                val r = if (keyword.isEmpty()) repository.lists(next) else repository.search(keyword, next)
+                when (r) {
+                    is ApiResult.Ok -> {
+                        val existing = current.data.list.map { it.id }.toSet()
+                        val fresh = r.value.list.filter { it.id.isNotBlank() && it.id !in existing }
+                        if (r.value.list.isEmpty() || fresh.isEmpty()) {
+                            // 模块忽略 page 参数时，停止继续翻页，避免无限追加
+                            _list.value = UiState.Success(current.data.copy(more = false))
+                        } else {
+                            page = next
+                            val merged = (current.data.list + fresh).take(maxItems)
+                            _list.value = UiState.Success(
+                                current.data.copy(
+                                    list = merged,
+                                    page = r.value.page,
+                                    more = r.value.more && merged.size < maxItems
+                                )
+                            )
+                        }
+                    }
+                    is ApiResult.Err -> {
+                        // 翻页失败不弹错误，但不能继续触发，否则会反复请求
+                        _list.value = UiState.Success(current.data.copy(more = false))
+                    }
                 }
-                is ApiResult.Err -> { /* 翻页失败静默 */ }
+            } catch (t: Throwable) {
+                _list.value = UiState.Success(current.data.copy(more = false))
+            } finally {
+                loadingMore = false
             }
         }
     }
 
     private suspend fun loadPage(p: Int) {
         _list.value = UiState.Loading
-        val r = if (keyword.isEmpty()) repository.lists(p) else repository.search(keyword, p)
-        _list.value = when (r) {
-            is ApiResult.Ok -> UiState.Success(r.value)
-            is ApiResult.Err -> UiState.Error(r.message)
+        _list.value = try {
+            val r = if (keyword.isEmpty()) repository.lists(p) else repository.search(keyword, p)
+            when (r) {
+                is ApiResult.Ok -> UiState.Success(r.value)
+                is ApiResult.Err -> UiState.Error(r.message)
+            }
+        } catch (t: Throwable) {
+            UiState.Error("短剧列表加载失败：${t.message ?: "未知错误"}")
         }
     }
 }
