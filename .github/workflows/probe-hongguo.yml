@@ -1,0 +1,52 @@
+name: Probe 红果模块（阶段0 可行性验证）
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: 拉取 guoapp Go 核心
+        uses: actions/checkout@v4
+        with:
+          repository: Xanerix/guoapp
+          ref: main
+          path: guoapp
+
+      - name: 拉取红果模块
+        uses: actions/checkout@v4
+        with:
+          repository: guoapp-modules/hongguo
+          ref: v1.0.7
+          path: guoapp/native/modules/hongguo
+
+      - name: 拉取黄果AI模块
+        uses: actions/checkout@v4
+        with:
+          repository: guoapp-modules/huangguoai
+          ref: v1.0.1
+          path: guoapp/native/modules/huangguoai
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.10'
+          cache-dependency-path: guoapp/native/go.sum
+
+      - name: 【红果】初始化 + 分类 + 首页列表
+        working-directory: guoapp/native
+        continue-on-error: true
+        run: |
+          go run ./cmd/moduletool ./modules/hongguo \
+            '{"action":"categories","source":"hongguo"}' \
+            '{"action":"catalog","source":"hongguo","category":"short_play","page":1}'
+
+      - name: 【黄果AI】初始化 + 分类 + 榜单
+        working-directory: guoapp/native
+        continue-on-error: true
+        run: |
+          go run ./cmd/moduletool ./modules/huangguoai \
+            '{"action":"categories","source":"huangguoai"}' \
+            '{"action":"rankings","source":"huangguoai","board":"huangguo-hot"}'
