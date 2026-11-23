@@ -11,18 +11,19 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,33 +32,28 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
-import coil3.request.ImageRequest
-import coil3.request.crossfade
 import com.youqu.vod.core.UiState
 import com.youqu.vod.data.model.DramaItem
-import com.youqu.vod.data.remote.GatewayUrls
 import com.youqu.vod.data.repo.DramaPageResult
 import com.youqu.vod.ui.components.EmptyBox
 import com.youqu.vod.ui.components.ErrorBox
-import com.youqu.vod.ui.components.OutlineChip
 import com.youqu.vod.ui.components.SectionTitle
 import com.youqu.vod.ui.components.SearchField
 import com.youqu.vod.ui.components.SimpleTopBar
+import com.youqu.vod.ui.components.coverRequest
 import com.youqu.vod.ui.theme.AccentOrange
 import com.youqu.vod.ui.theme.OledBlack
 import com.youqu.vod.ui.theme.SurfaceDark
 import com.youqu.vod.ui.theme.SurfaceDark2
 import com.youqu.vod.ui.theme.TextPrimary
-import com.youqu.vod.ui.theme.TextSecondary
 
 @Composable
 fun DramaScreen(
     listState: UiState<DramaPageResult>,
-    hotState: UiState<List<String>>,
-    baseUrl: String,
     keyword: String,
     onKeywordChange: (String) -> Unit,
     onSearch: (String) -> Unit,
+    onRefresh: () -> Unit,
     onRetry: () -> Unit,
     onLoadMore: () -> Unit,
     onDramaClick: (DramaItem) -> Unit,
@@ -70,6 +66,9 @@ fun DramaScreen(
         SimpleTopBar(
             title = "短剧",
             actions = {
+                IconButton(onClick = onRefresh) {
+                    Icon(Icons.Default.Refresh, contentDescription = "刷新", tint = AccentOrange)
+                }
                 Surface(
                     onClick = onModulesClick,
                     color = SurfaceDark2,
@@ -92,34 +91,6 @@ fun DramaScreen(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
         )
 
-        SectionTitle(text = "热门搜索")
-        when (hotState) {
-            is UiState.Success -> {
-                val words = hotState.data
-                if (words.isEmpty()) {
-                    Text("暂无热搜词", color = TextSecondary, fontSize = 12.sp,
-                        modifier = Modifier.padding(horizontal = 12.dp))
-                } else {
-                    LazyRow(contentPadding = PaddingValues(horizontal = 12.dp)) {
-                        itemsIndexed(words) { _, w ->
-                            OutlineChip(
-                                text = w,
-                                onClick = { onSearch(w) },
-                                modifier = Modifier.padding(end = 8.dp)
-                            )
-                        }
-                    }
-                }
-            }
-            is UiState.Error, is UiState.Loading, is UiState.Idle -> {
-                LazyRow(contentPadding = PaddingValues(horizontal = 12.dp)) {
-                    itemsIndexed((hotState as? UiState.Success)?.data ?: listOf("", "", "")) { _, _ ->
-                        OutlineChip(text = "      ", onClick = {}, modifier = Modifier.padding(end = 8.dp))
-                    }
-                }
-            }
-        }
-
         SectionTitle(text = "短剧列表")
         when (listState) {
             is UiState.Loading, is UiState.Idle -> {
@@ -141,20 +112,10 @@ fun DramaScreen(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        gridItemsIndexed(page.list) { index, item ->
+                        gridItemsIndexed(page.list) { _, item ->
                             DramaCard(
                                 item = item,
-                                coverUrl = item.cover.orEmpty().let { c ->
-                                    when {
-                                        c.isBlank() -> ""
-                                        c.startsWith("http", ignoreCase = true) -> c
-                                        c.startsWith("data:", ignoreCase = true) ||
-                                            c.startsWith("content:", ignoreCase = true) -> c
-                                        // 第三方模块可能返回相对路径；短剧没有可用网关 base 时不拼无效地址
-                                        baseUrl.isBlank() -> ""
-                                        else -> GatewayUrls.image(baseUrl, c)
-                                    }
-                                },
+                                coverUrl = item.cover.orEmpty(),
                                 onClick = { onDramaClick(item) }
                             )
                         }
@@ -196,7 +157,7 @@ private fun DramaCard(
             if (coverUrl.isNotBlank()) {
                 val ctx = androidx.compose.ui.platform.LocalContext.current
                 val request = androidx.compose.runtime.remember(coverUrl, ctx) {
-                    ImageRequest.Builder(ctx).data(coverUrl).size(360, 640).crossfade(true).build()
+                    coverRequest(ctx, coverUrl, 360, 640)
                 }
                 AsyncImage(
                     model = request,
