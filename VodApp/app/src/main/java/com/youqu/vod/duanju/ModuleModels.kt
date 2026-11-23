@@ -42,6 +42,18 @@ data class ModuleStore(
     val warning: String
 )
 
+/**
+ * 短剧页可切换的数据源（已启用且可用的模块）。
+ * 多个模块同时启用时，列表只展示当前选中这一个源的内容。
+ */
+data class DramaSourceOption(
+    val id: String,
+    val name: String,
+    val adult: Boolean
+) {
+    val displayName: String get() = name.ifBlank { id }
+}
+
 internal fun JSONArray.strings(): List<String> =
     (0 until length()).mapNotNull { opt(it)?.toString()?.takeIf { v -> v.isNotBlank() && v != "null" } }
 
