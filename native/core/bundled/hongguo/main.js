@@ -2262,16 +2262,19 @@ function resolveVideoMedia(task) {
   if (!numericId(videoId) || !numericId(seriesId)) {
     throw new Error("红果章节 ID 无效，请重新获取章节");
   }
-  let nativeError;
-  try {
-    return appMedia(videoId);
-  } catch (error) {
-    nativeError = error;
-  }
+  // 红果 App 私有接口容易被风控返回 200 空 body，且每次失败要重试多轮导致进播放页很慢。
+  // 公开试看集的 MP4 就在官网页面的 publicVideoSeo 中，优先走网页可秒开；
+  // 非公开集再回退 App 接口，待上游接口恢复后仍可播放全集。
   try {
     return webMedia(seriesId, videoId);
   } catch (pageError) {
-    throw new Error("红果 App 取流失败：" + message(nativeError) + "；网页取流失败：" + message(pageError));
+    let nativeError;
+    try {
+      return appMedia(videoId);
+    } catch (error) {
+      nativeError = error;
+      throw new Error("红果 App 取流失败：" + message(nativeError) + "；网页取流失败：" + message(pageError));
+    }
   }
 }
 
@@ -2615,8 +2618,22 @@ function fallbackMedia(model, original) {
 function webMedia(seriesId, videoId) {
   const body = fetchSiteText(siteBaseUrl + "/player/" + encodeURIComponent(seriesId) + "/" + encodeURIComponent(videoId));
   const page = routerLoaderMap(parseRouterData(body), "player_", "player_page");
-  if (mapString(page, "vid") !== videoId || mapString(page, "series_id") !== seriesId) {
+  if (!isRecord(page)) {
+    throw new Error("红果未返回播放页数据");
+  }
+  // 官网当前把公开试看集放在 publicVideoSeo.itemId，对应 /video/public/{itemId}/360p.mp4。
+  const seo = nested(page, "publicVideoSeo");
+  const pageVid = firstNonEmpty(mapString(page, "vid"), mapString(seo, "itemId"));
+  const pageSeries = firstNonEmpty(mapString(page, "series_id"), mapString(seo, "seriesId"));
+  if ((pageVid !== "" && pageVid !== videoId) || (pageSeries !== "" && pageSeries !== seriesId)) {
     throw new Error("红果未返回所请求的剧集，可能仅允许网页试看；请在站点确认该集的访问权限");
+  }
+  if (mapString(seo, "itemId") === videoId && mapString(seo, "available") === "true") {
+    const url = siteBaseUrl + "/video/public/" + encodeURIComponent(videoId) + "/360p.mp4";
+    const seconds = parseNumber(mapString(seo, "durationSeconds"));
+    const durationMs = Number.isFinite(seconds) ? Math.trunc(seconds * secondMs) : 0;
+    const referer = siteBaseUrl + "/";
+    return { url, referer, durationMs, variants: [{ url, referer, durationMs }] };
   }
   const info = nested(page, "video_player_info");
   const addresses = mediaAddresses(info);
