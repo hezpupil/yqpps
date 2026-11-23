@@ -66,6 +66,7 @@ fun SettingsScreen(
     onDeviceActive: suspend () -> Boolean,
     onHistoryClick: (String) -> Unit,
     onPlayClick: (PlayRecord) -> Unit,
+    onModulesClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -128,6 +129,30 @@ fun SettingsScreen(
             fontSize = 12.sp,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
         )
+
+        /* ---------- 短剧模块 ---------- */
+
+        SectionTitle("短剧模块")
+        Surface(
+            onClick = onModulesClick,
+            color = SurfaceDark,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("模块管理", color = TextPrimary, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Text("安装 / 删除 / 启用短剧源", color = TextTertiary, fontSize = 11.sp)
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = TextTertiary,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
 
         /* ---------- 设备信息 ---------- */
 
