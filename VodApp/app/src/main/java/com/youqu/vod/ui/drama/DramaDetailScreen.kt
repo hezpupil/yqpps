@@ -38,8 +38,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
-import coil3.request.ImageRequest
-import coil3.request.crossfade
+import com.youqu.vod.ui.components.coverRequest
 import com.youqu.vod.core.UiState
 import com.youqu.vod.data.model.DramaDetailData
 import com.youqu.vod.ui.components.EmptyBox
@@ -99,7 +98,7 @@ fun DramaDetailScreen(
                         ) {
                             val ctx = androidx.compose.ui.platform.LocalContext.current
                             val request = androidx.compose.runtime.remember(cover, ctx) {
-                                ImageRequest.Builder(ctx).data(cover).size(720, 480).crossfade(true).build()
+                                coverRequest(ctx, cover, 720, 480)
                             }
                             AsyncImage(
                                 model = request,
