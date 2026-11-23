@@ -201,9 +201,14 @@ class ModuleDramaRepository(
     /* ---------- 内部工具 ---------- */
 
     private suspend fun call(build: JSONObject.() -> Unit): ApiResult<JSONObject?> =
-        when (val r = NativeCore.call(build)) {
-            is NativeCore.CoreResult.Ok -> ApiResult.Ok(r.data)
-            is NativeCore.CoreResult.Err -> ApiResult.Err(r.message)
+        try {
+            when (val r = NativeCore.call(build)) {
+                is NativeCore.CoreResult.Ok -> ApiResult.Ok(r.data)
+                is NativeCore.CoreResult.Err -> ApiResult.Err(r.message)
+            }
+        } catch (t: Throwable) {
+            android.util.Log.e("ModuleDramaRepository", "短剧核心调用异常", t)
+            ApiResult.Err("短剧核心调用异常：${t.message ?: "未知错误"}")
         }
 
     private fun <T, R> ApiResult<T>.map(transform: (T) -> R): ApiResult<R> = when (this) {
