@@ -1,6 +1,8 @@
 package com.youqu.vod.ui.components
 
 import android.content.Context
+import coil3.network.NetworkHeaders
+import coil3.network.httpHeaders
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import java.net.URI
@@ -18,10 +20,13 @@ fun coverRequest(context: Context, url: String, width: Int, height: Int): ImageR
         val uri = URI(url)
         uri.scheme?.let { scheme -> uri.host?.let { host -> "$scheme://$host/" } }
     }.getOrNull()
+    val headers = NetworkHeaders.Builder()
+        .set("User-Agent", COVER_UA)
+        .apply { if (!referer.isNullOrBlank()) set("Referer", referer) }
+        .build()
     return ImageRequest.Builder(context)
         .data(url)
-        .setHeader("User-Agent", COVER_UA)
-        .apply { if (!referer.isNullOrBlank()) setHeader("Referer", referer) }
+        .httpHeaders(headers)
         .size(width, height)
         .crossfade(true)
         .build()
