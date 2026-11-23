@@ -87,6 +87,8 @@ jobs:
           echo ""
           echo "=== RESOLVE 全返回（url/headers/key）==="
           timeout 150 /tmp/moduletool ./modules/hongguo \
-            "{\"action\":\"resolve\",\"drama\":$DRAMA,\"chapter\":$CH0,\"index\":0}" 2>/dev/null \
-            | tail -1 | head -c 2000
+            "{\"action\":\"resolve\",\"sequence\":1,\"drama\":$DRAMA,\"chapter\":$CH0,\"index\":0}" 2>/dev/null \
+            | tail -1 | head -c 2500
           echo ""
+          echo "=== APP.LOG 错误线索 ==="
+          timeout 30 true
