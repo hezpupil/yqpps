@@ -7,9 +7,69 @@ on:
   # 避免「Android CI 编一次 + Release 再编一次」的双份构建。
 
 jobs:
-  build:
+  build-native:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.10'
+          cache-dependency-path: native/go.sum
+      - name: 定位 Android NDK
+        id: ndk
+        run: |
+          # 优先用镜像预装 NDK，找不到再下载 r28c
+          CAND=$(find /usr/local/lib/android/sdk/ndk -maxdepth 3 -type f \
+                 -path '*/llvm/prebuilt/linux-x86_64/bin/clang' 2>/dev/null | sort -V | tail -1)
+          if [ -z "$CAND" ]; then
+            d="$RUNNER_TEMP/ndk"; mkdir -p "$d" "$RUNNER_TEMP/ndk-tmp"
+            curl -sSL -o /tmp/ndk.zip https://dl.google.com/android/repository/android-ndk-r28c-linux.zip
+            unzip -q /tmp/ndk.zip -d "$RUNNER_TEMP/ndk-tmp"
+            EX=$(find "$RUNNER_TEMP/ndk-tmp" -maxdepth 1 -type d -name 'android-ndk-*' | head -1)
+            mv "$EX" "$d/r28c"
+            CAND=$(find "$d" -maxdepth 3 -type f -path '*/llvm/prebuilt/linux-x86_64/bin/clang' | head -1)
+          fi
+          NDK_ROOT=$(echo "$CAND" | sed 's#/toolchains/llvm/prebuilt/linux-x86_64/bin/clang##')
+          echo "root=$NDK_ROOT" >> "$GITHUB_OUTPUT"
+          echo "NDK root: $NDK_ROOT"
+      - name: 编译 Go 核心 (arm64-v8a + armeabi-v7a)
+        working-directory: native
+        env:
+          CGO_ENABLED: '1'
+          GOOS: android
+          GOPROXY: https://goproxy.cn,direct
+          GOSUMDB: 'off'
+        run: |
+          NDK_ROOT="${{ steps.ndk.outputs.root }}"
+          CC="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
+          SYSROOT="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include"
+          mkdir -p ../VodApp/app/src/main/jniLibs/arm64-v8a ../VodApp/app/src/main/jniLibs/armeabi-v7a
+          GOARCH=arm64 \
+          CC="$CC" CGO_CFLAGS="--target=aarch64-linux-android24 -I$SYSROOT" \
+          CGO_LDFLAGS="--target=aarch64-linux-android24 -Wl,-z,max-page-size=16384" \
+            go build -trimpath -buildmode=c-shared -ldflags='-s -w' \
+              -o ../VodApp/app/src/main/jniLibs/arm64-v8a/libyouqu_duanju.so ./bridge_android
+          GOARCH=arm GOARM=7 \
+          CC="$CC" CGO_CFLAGS="--target=armv7a-linux-androideabi24 -I$SYSROOT" \
+          CGO_LDFLAGS="--target=armv7a-linux-androideabi24 -Wl,-z,max-page-size=16384" \
+            go build -trimpath -buildmode=c-shared -ldflags='-s -w' \
+              -o ../VodApp/app/src/main/jniLibs/armeabi-v7a/libyouqu_duanju.so ./bridge_android
+          ls -lh ../VodApp/app/src/main/jniLibs/*/*.so
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-android-so
+          path: VodApp/app/src/main/jniLibs/*/libyouqu_duanju.so
+          retention-days: 7
+
+  build:
+    needs: build-native
+    runs-on: ubuntu-latest
+    steps:
+      - name: 下载 Go 核心 .so
+        uses: actions/download-artifact@v4
+        with:
+          name: native-android-so
+          path: VodApp/app/src/main/jniLibs
       - name: Checkout
         uses: actions/checkout@v4
 

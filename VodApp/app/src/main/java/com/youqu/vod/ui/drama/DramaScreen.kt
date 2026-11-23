@@ -65,7 +65,7 @@ fun DramaScreen(
     Column(
         modifier = modifier.fillMaxSize().background(OledBlack)
     ) {
-        SimpleTopBar(title = "短剧")
+        SimpleTopBar(title = "短剧", actions = { com.youqu.vod.duanju.CoreDiagAction() })
 
         SearchField(
             value = keyword,
