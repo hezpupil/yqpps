@@ -202,14 +202,13 @@ fun AppNavHost() {
                 })
                 DramaScreen(
                     listState = vm.list.collectAsStateWithLifecycle().value,
-                    hotState = vm.hot.collectAsStateWithLifecycle().value,
-                    baseUrl = vm.baseUrl,
                     keyword = keyword,
                     onKeywordChange = { keyword = it },
                     onSearch = { kw ->
                         app.container.settings.addHistory(kw)
                         vm.search(kw)
                     },
+                    onRefresh = { keyword = ""; vm.refresh() },
                     onRetry = vm::load,
                     onLoadMore = vm::loadMore,
                     onDramaClick = { item -> navController.navigateToDramaDetail(item.id?.toString().orEmpty()) },
@@ -335,8 +334,6 @@ fun AppNavHost() {
                 })
                 DramaScreen(
                     listState = vm.list.collectAsStateWithLifecycle().value,
-                    hotState = vm.hot.collectAsStateWithLifecycle().value,
-                    baseUrl = vm.baseUrl,
                     keyword = keyword,
                     onKeywordChange = { keyword = it },
                     onSearch = { newKw ->
@@ -345,6 +342,7 @@ fun AppNavHost() {
                             vm.search(newKw)
                         }
                     },
+                    onRefresh = { keyword = ""; vm.refresh() },
                     onRetry = vm::load,
                     onLoadMore = vm::loadMore,
                     onDramaClick = { item -> navController.navigateToDramaDetail(item.id?.toString().orEmpty()) },
