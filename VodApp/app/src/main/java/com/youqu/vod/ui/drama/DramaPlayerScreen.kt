@@ -4,10 +4,14 @@ import android.app.Activity
 import android.content.pm.ActivityInfo
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -69,7 +73,20 @@ import kotlinx.coroutines.delay
 private const val DRAMA_UA =
     "Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36"
 private const val SWIPE_THRESHOLD = 120f
+/** 判定拖动主轴的位移阈值（dp 换算前的像素量级） */
+private const val DRAG_AXIS_SLOP = 24f
+/** 水平拖满一屏对应的快进秒数 */
+private const val SEEK_SECONDS_PER_SCREEN = 120f
+/** 单次拖动最多快进/快退秒数 */
+private const val SEEK_MAX_SECONDS = 90f
 private val SPEED_STEPS = listOf(1f, 1.25f, 1.5f, 2f, 0.75f)
+
+/** 水平拖动距离换算成毫秒偏移，拖得越远越快，但封顶避免误操作跳太远 */
+private fun seekDeltaMs(dragX: Float, widthPx: Float): Long {
+    if (widthPx <= 0f) return 0L
+    val seconds = (dragX / widthPx) * SEEK_SECONDS_PER_SCREEN
+    return (seconds.coerceIn(-SEEK_MAX_SECONDS, SEEK_MAX_SECONDS) * 1000).toLong()
+}
 
 /**
  * 短剧独立播放页（对标 guoapp 竖屏沉浸播放）：
@@ -157,28 +174,119 @@ fun DramaPlayerScreen(
                     EmptyBox(text = "暂无可播放剧集")
                 }
             } else {
-                Box(modifier = modifier.fillMaxSize().background(Color.Black)) {
-                    // ① 视频画面铺满（竖屏视频由 ExoPlayer 按真实比例渲染，容器 fillMaxSize）
-                    VideoSurface(controller, Modifier.fillMaxSize())
-
-                    // ② 画面手势层：单击显隐 + 上下滑切集（完全透明，不遮挡画面）
+                BoxWithConstraints(modifier = modifier.fillMaxSize().background(Color.Black)) {
+                    // 手势与倍速共享状态
+                    var speed by remember(controller) { mutableStateOf(1f) }
+                    var boosting by remember { mutableStateOf(false) }
+                    var speedBeforeBoost by remember { mutableStateOf(1f) }
+                    var seekPreviewMs by remember { mutableStateOf<Long?>(null) }
+                    var dragX by remember { mutableStateOf(0f) }
                     var dragY by remember { mutableStateOf(0f) }
+                    var dragAxis by remember { mutableStateOf(0) } // 0=未定 1=水平快进 2=垂直切集
+                    val widthPx = constraints.maxWidth.toFloat()
+
+                    /*
+                     * 按视频真实尺寸显示，不再一律拉成细长全屏：
+                     * 取 ExoPlayer 回调的真实宽高比（含像素宽高比校正），等比缩放到容器内（fit），
+                     * 剩余区域留黑边。横屏剧不会变形，竖屏剧也不会被拉伸。
+                     */
+                    val ratio = controller.state.videoRatio
+                    val containerRatio =
+                        if (maxHeight.value > 0f) maxWidth.value / maxHeight.value else 0f
+                    val surfaceModifier = when {
+                        ratio == null || ratio <= 0f || containerRatio <= 0f ->
+                            Modifier.fillMaxSize()
+                        ratio > containerRatio ->
+                            Modifier.fillMaxWidth().aspectRatio(ratio)
+                        else ->
+                            Modifier.fillMaxHeight()
+                                .aspectRatio(ratio, matchHeightConstraintsFirst = true)
+                    }
+
+                    // ① 视频画面：等比居中，未知比例时才铺满
+                    VideoSurface(controller, surfaceModifier.align(Alignment.Center))
+
+                    // ② 手势层：单击显隐 / 长按 2 倍速 / 左右滑动快进 / 上下滑动切集
                     Box(
                         modifier = Modifier.fillMaxSize()
-                            .clickable { controlsVisible = !controlsVisible }
                             .pointerInput(Unit) {
-                                detectVerticalDragGestures(
-                                    onDragStart = { dragY = 0f },
-                                    onDragEnd = {
-                                        if (abs(dragY) > SWIPE_THRESHOLD) {
-                                            vm.step(if (dragY < 0) 1 else -1)
-                                        }
+                                detectDragGestures(
+                                    onDragStart = {
+                                        dragX = 0f
                                         dragY = 0f
+                                        dragAxis = 0
                                     },
-                                    onDragCancel = { dragY = 0f }
-                                ) { _, amount ->
-                                    dragY += amount
+                                    onDragCancel = {
+                                        dragX = 0f
+                                        dragY = 0f
+                                        dragAxis = 0
+                                        seekPreviewMs = null
+                                    },
+                                    onDragEnd = {
+                                        when (dragAxis) {
+                                            1 -> {
+                                                val delta = seekDeltaMs(dragX, widthPx)
+                                                if (abs(delta) > 500L) {
+                                                    val duration = controller.durationMs()
+                                                    val base = controller.currentPositionMs()
+                                                    val target = (base + delta).coerceIn(
+                                                        0L,
+                                                        if (duration > 0) duration else Long.MAX_VALUE
+                                                    )
+                                                    controller.seekTo(target)
+                                                }
+                                            }
+                                            2 -> {
+                                                if (abs(dragY) > SWIPE_THRESHOLD) {
+                                                    vm.step(if (dragY < 0) 1 else -1)
+                                                }
+                                            }
+                                        }
+                                        dragX = 0f
+                                        dragY = 0f
+                                        dragAxis = 0
+                                        seekPreviewMs = null
+                                    }
+                                ) { change, amount ->
+                                    dragX += amount.x
+                                    dragY += amount.y
+                                    if (dragAxis == 0) {
+                                        dragAxis = when {
+                                            abs(dragX) > DRAG_AXIS_SLOP && abs(dragX) > abs(dragY) -> 1
+                                            abs(dragY) > DRAG_AXIS_SLOP -> 2
+                                            else -> 0
+                                        }
+                                    }
+                                    if (dragAxis == 1) {
+                                        val delta = seekDeltaMs(dragX, widthPx)
+                                        val duration = controller.durationMs()
+                                        val base = controller.currentPositionMs()
+                                        seekPreviewMs = (base + delta).coerceIn(
+                                            0L,
+                                            if (duration > 0) duration else Long.MAX_VALUE
+                                        )
+                                    }
+                                    change.consume()
                                 }
+                            }
+                            .pointerInput(Unit) {
+                                detectTapGestures(
+                                    onTap = { controlsVisible = !controlsVisible },
+                                    onLongPress = {
+                                        if (!boosting) {
+                                            boosting = true
+                                            speedBeforeBoost = speed
+                                            controller.setSpeed(2f)
+                                        }
+                                    },
+                                    onPress = {
+                                        tryAwaitRelease()
+                                        if (boosting) {
+                                            boosting = false
+                                            controller.setSpeed(speedBeforeBoost)
+                                        }
+                                    }
+                                )
                             }
                     )
 
@@ -217,7 +325,6 @@ fun DramaPlayerScreen(
                         val duration = controller.state.durationMs
                         val position = controller.state.positionMs
                         val progress = if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f
-                        var speed by remember(controller) { mutableStateOf(1f) }
                         Column(
                             modifier = Modifier.fillMaxWidth()
                                 .align(Alignment.BottomCenter)
@@ -269,6 +376,52 @@ fun DramaPlayerScreen(
                                 IconButton(onClick = { showEpSheet = true }) {
                                     Icon(Icons.Default.Apps, contentDescription = "选集", tint = Color.White)
                                 }
+                            }
+                        }
+                    }
+
+                    // 长按 2 倍速提示
+                    if (boosting) {
+                        Surface(
+                            color = Color.Black.copy(alpha = 0.62f),
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier.align(Alignment.TopCenter).padding(top = 96.dp)
+                        ) {
+                            Text(
+                                text = "2.0x 倍速播放中",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
+
+                    // 左右拖动快进/快退预览（松手才真正 seek）
+                    seekPreviewMs?.let { target ->
+                        val base = controller.currentPositionMs()
+                        val delta = target - base
+                        Surface(
+                            color = Color.Black.copy(alpha = 0.72f),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.align(Alignment.Center)
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp)
+                            ) {
+                                Text(
+                                    text = (if (delta >= 0) "快进 +" else "快退 -") +
+                                        formatDuration((abs(delta) / 1000).toInt()),
+                                    color = AccentOrange,
+                                    fontSize = 13.sp
+                                )
+                                Text(
+                                    text = "${formatDuration((base / 1000).toInt())} → " +
+                                        formatDuration((target / 1000).toInt()),
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
                             }
                         }
                     }
