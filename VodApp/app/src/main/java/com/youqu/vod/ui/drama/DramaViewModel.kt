@@ -79,8 +79,11 @@ class DramaViewModel(
                 val r = if (keyword.isEmpty()) repository.lists(next) else repository.search(keyword, next)
                 when (r) {
                     is ApiResult.Ok -> {
-                        val existing = current.data.list.map { it.id }.toSet()
-                        val fresh = r.value.list.filter { it.id.isNotBlank() && it.id !in existing }
+                        val existing = current.data.list.map { it.id?.toString().orEmpty() }.toSet()
+                        val fresh = r.value.list.filter { item ->
+                            val id = item.id?.toString().orEmpty()
+                            id.isNotBlank() && id !in existing
+                        }
                         if (r.value.list.isEmpty() || fresh.isEmpty()) {
                             // 模块忽略 page 参数时，停止继续翻页，避免无限追加
                             _list.value = UiState.Success(current.data.copy(more = false))
