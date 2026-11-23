@@ -54,6 +54,8 @@ import com.youqu.vod.ui.drama.DramaPlayerScreen
 import com.youqu.vod.ui.drama.DramaPlayerViewModel
 import com.youqu.vod.ui.home.HomeScreen
 import com.youqu.vod.ui.home.HomeViewModel
+import com.youqu.vod.ui.modules.ModulesScreen
+import com.youqu.vod.ui.modules.ModulesViewModel
 import com.youqu.vod.ui.hot.HotScreen
 import com.youqu.vod.ui.hot.HotViewModel
 import com.youqu.vod.ui.player.PlayerScreen
@@ -75,6 +77,7 @@ const val ROUTE_HOME = "home"
 const val ROUTE_HOT = "hot"
 const val ROUTE_DRAMA = "drama"
 const val ROUTE_SETTINGS = "settings"
+const val ROUTE_MODULES = "modules"
 const val ROUTE_SEARCH = "search/{kw}/{order}/{page}"
 const val ROUTE_PLAY = "play/{vid}"
 const val ROUTE_DRAMA_PLAY = "drama_play/{did}"
@@ -146,7 +149,8 @@ fun AppNavHost() {
     Scaffold(
         containerColor = OledBlack,
         bottomBar = {
-            if (!currentRoute.startsWith(PREFIX_PLAY) &&
+            if (currentRoute != ROUTE_MODULES &&
+                !currentRoute.startsWith(PREFIX_PLAY) &&
                 !currentRoute.startsWith(PREFIX_DRAMA_PLAY) &&
                 !currentRoute.startsWith(PREFIX_DRAMA_SEARCH)
             ) {
@@ -208,7 +212,8 @@ fun AppNavHost() {
                     },
                     onRetry = vm::load,
                     onLoadMore = vm::loadMore,
-                    onDramaClick = { item -> navController.navigateToDramaDetail(item.id?.toString().orEmpty()) }
+                    onDramaClick = { item -> navController.navigateToDramaDetail(item.id?.toString().orEmpty()) },
+                    onModulesClick = { navController.navigate(ROUTE_MODULES) }
                 )
             }
 
@@ -240,8 +245,17 @@ fun AppNavHost() {
                     },
                     onPlayClick = { record ->
                         navController.navigateToPlay(record.vid)
-                    }
+                    },
+                    onModulesClick = { navController.navigate(ROUTE_MODULES) }
                 )
+            }
+
+            composable(ROUTE_MODULES) {
+                val appContext = context.applicationContext
+                val vm: ModulesViewModel = viewModel(factory = viewModelFactory {
+                    ModulesViewModel(app.container.moduleRepository, app.container.modulePreferences, appContext)
+                })
+                ModulesScreen(vm = vm, onBack = { navController.popBackStack() })
             }
 
             composable(
@@ -333,7 +347,8 @@ fun AppNavHost() {
                     },
                     onRetry = vm::load,
                     onLoadMore = vm::loadMore,
-                    onDramaClick = { item -> navController.navigateToDramaDetail(item.id?.toString().orEmpty()) }
+                    onDramaClick = { item -> navController.navigateToDramaDetail(item.id?.toString().orEmpty()) },
+                    onModulesClick = { navController.navigate(ROUTE_MODULES) }
                 )
             }
 
