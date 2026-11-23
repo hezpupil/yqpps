@@ -50,6 +50,8 @@ import com.youqu.vod.ui.drama.DramaDetailScreen
 import com.youqu.vod.ui.drama.DramaDetailViewModel
 import com.youqu.vod.ui.drama.DramaScreen
 import com.youqu.vod.ui.drama.DramaViewModel
+import com.youqu.vod.ui.drama.DramaPlayerScreen
+import com.youqu.vod.ui.drama.DramaPlayerViewModel
 import com.youqu.vod.ui.home.HomeScreen
 import com.youqu.vod.ui.home.HomeViewModel
 import com.youqu.vod.ui.hot.HotScreen
@@ -76,6 +78,7 @@ const val ROUTE_SETTINGS = "settings"
 const val ROUTE_SEARCH = "search/{kw}/{order}/{page}"
 const val ROUTE_PLAY = "play/{vid}"
 const val ROUTE_DRAMA_PLAY = "drama_play/{did}"
+const val ROUTE_DRAMA_PLAYER = "drama_player/{did}/{idx}"
 const val ROUTE_DRAMA_SEARCH = "drama_search/{kw}"
 const val PREFIX_PLAY = "play"
 const val PREFIX_SEARCH = "search"
@@ -89,11 +92,14 @@ fun NavController.navigateToDramaSearch(keyword: String) {
     }
 }
 
-/** 短剧详情播放页之间切换时替换，避免返回栈堆积 */
-fun NavController.navigateToDramaPlay(dramaId: String) {
-    navigate("drama_play/${Uri.encode(dramaId)}") {
-        popUpTo(ROUTE_DRAMA_PLAY) { inclusive = true }
-    }
+/** 短剧详情页：列表点卡片进入（不 pop，保留返回到列表） */
+fun NavController.navigateToDramaDetail(dramaId: String) {
+    navigate("drama_play/${Uri.encode(dramaId)}")
+}
+
+/** 短剧独立播放页：从详情页选集进入 */
+fun NavController.navigateToDramaPlayer(dramaId: String, index: Int) {
+    navigate("drama_player/${Uri.encode(dramaId)}/$index")
 }
 
 /** 排序与翻页时替换当前搜索页，避免在返回栈里堆出一串相同页面 */
@@ -188,7 +194,7 @@ fun AppNavHost() {
             composable(ROUTE_DRAMA) {
                 var keyword by remember { mutableStateOf("") }
                 val vm: DramaViewModel = viewModel(factory = viewModelFactory {
-                    DramaViewModel(app.container.dramaRepository)
+                    DramaViewModel(app.container.moduleDramaRepository)
                 })
                 DramaScreen(
                     listState = vm.list.collectAsStateWithLifecycle().value,
@@ -202,7 +208,7 @@ fun AppNavHost() {
                     },
                     onRetry = vm::load,
                     onLoadMore = vm::loadMore,
-                    onDramaClick = { item -> navController.navigateToDramaPlay(item.id?.toString().orEmpty()) }
+                    onDramaClick = { item -> navController.navigateToDramaDetail(item.id?.toString().orEmpty()) }
                 )
             }
 
@@ -311,7 +317,7 @@ fun AppNavHost() {
                 val kw = entry.arguments?.getString("kw") ?: ""
                 var keyword by remember { mutableStateOf(kw) }
                 val vm: DramaViewModel = viewModel(factory = viewModelFactory {
-                    DramaViewModel(app.container.dramaRepository, kw)
+                    DramaViewModel(app.container.moduleDramaRepository, kw)
                 })
                 DramaScreen(
                     listState = vm.list.collectAsStateWithLifecycle().value,
@@ -327,7 +333,7 @@ fun AppNavHost() {
                     },
                     onRetry = vm::load,
                     onLoadMore = vm::loadMore,
-                    onDramaClick = { item -> navController.navigateToDramaPlay(item.id?.toString().orEmpty()) }
+                    onDramaClick = { item -> navController.navigateToDramaDetail(item.id?.toString().orEmpty()) }
                 )
             }
 
@@ -337,12 +343,30 @@ fun AppNavHost() {
             ) { entry ->
                 val did = entry.arguments?.getString("did") ?: ""
                 val vm: DramaDetailViewModel = viewModel(factory = viewModelFactory {
-                    DramaDetailViewModel(app.container.dramaRepository, did)
+                    DramaDetailViewModel(app.container.moduleDramaRepository, did)
                 })
                 DramaDetailScreen(
                     state = vm.state.collectAsStateWithLifecycle().value,
-                    baseUrl = vm.baseUrl,
+                    onPlayEpisode = { index -> navController.navigateToDramaPlayer(did, index) },
                     onRetry = vm::load,
+                    onBack = { navController.popBackStack() }
+                )
+            }
+
+            composable(
+                route = ROUTE_DRAMA_PLAYER,
+                arguments = listOf(
+                    navArgument("did") { type = NavType.StringType },
+                    navArgument("idx") { type = NavType.IntType }
+                )
+            ) { entry ->
+                val did = entry.arguments?.getString("did") ?: ""
+                val idx = entry.arguments?.getInt("idx") ?: 0
+                val vm: DramaPlayerViewModel = viewModel(factory = viewModelFactory {
+                    DramaPlayerViewModel(app.container.moduleDramaRepository, did, idx)
+                })
+                DramaPlayerScreen(
+                    vm = vm,
                     onBack = { navController.popBackStack() }
                 )
             }

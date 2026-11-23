@@ -6,7 +6,7 @@ import com.youqu.vod.core.ApiResult
 import com.youqu.vod.core.UiState
 import com.youqu.vod.data.model.DramaItem
 import com.youqu.vod.data.repo.DramaPageResult
-import com.youqu.vod.data.repo.DramaRepository
+import com.youqu.vod.duanju.ModuleDramaRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,7 +17,7 @@ import kotlinx.coroutines.launch
  * searchKeyword 非空时展示搜索结果，否则展示首页列表。两者共用同一套 DramaScreen。
  */
 class DramaViewModel(
-    private val repository: DramaRepository,
+    private val repository: ModuleDramaRepository,
     private val initialKeyword: String = ""
 ) : ViewModel() {
 

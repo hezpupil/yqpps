@@ -48,12 +48,16 @@ object NativeCore {
 
     @Volatile
     private var initialized = false
+    @Volatile
+    private var appContext: Context? = null
 
     /**
      * 初始化核心数据目录（必须在任何业务请求前调用一次）。
      * 目录用 App 私有目录，模块/缓存/下载都落在这里。
      */
+    @Synchronized
     fun initialize(context: Context): String {
+        appContext = context.applicationContext
         if (!loaded) return """{"ok":false,"error":"短剧核心未加载"}"""
         if (initialized) return """{"ok":true,"data":{"already":true}}"""
         return try {
@@ -73,5 +77,50 @@ object NativeCore {
             Log.e(TAG, "initialize 失败", t)
             """{"ok":false,"error":"短剧核心初始化失败：${t.message ?: "未知错误"}"}"""
         }
+    }
+
+    /** 确保已初始化（业务层统一入口，避免遗漏 initialize） */
+    fun ensureInitialized() {
+        appContext?.let { initialize(it) }
+    }
+
+    /** 构造请求并解析 envelope，data 为 null 表示失败，error 带可读原因 */
+    fun call(build: JSONObject.() -> Unit): CoreResult {
+        ensureInitialized()
+        if (!loaded) return CoreResult.Err("短剧核心未加载")
+        return try {
+            val payload = JSONObject().apply(build).toString()
+            val resp = JSONObject(nativeRequest(payload))
+            if (resp.optBoolean("ok")) {
+                CoreResult.Ok(resp.optJSONObject("data"))
+            } else {
+                CoreResult.Err(resp.optString("error").ifBlank { "短剧核心请求失败" })
+            }
+        } catch (t: Throwable) {
+            Log.e(TAG, "call 失败", t)
+            CoreResult.Err(t.message ?: "短剧核心调用异常")
+        }
+    }
+
+    sealed interface CoreResult {
+        data class Ok(val data: JSONObject?) : CoreResult
+        data class Err(val message: String) : CoreResult
+    }
+
+    /** 播放会话序号：切集必须递增，核心据此取消上一次播放 */
+    @Volatile
+    private var sequence = 0L
+    fun nextSequence(): Long = ++sequence
+}
+
+/** JSON 数组安全取字符串 */
+fun org.json.JSONArray.str(position: Int): String = opt(position)?.toString()?.takeIf { it != "null" } ?: ""
+/** JSON 对象安全取整数（兼容数字/字符串/浮点） */
+fun JSONObject.int(key: String): Int {
+    val v = opt(key) ?: return 0
+    return when (v) {
+        is Number -> v.toDouble().toInt()
+        is String -> v.toDoubleOrNull()?.toInt() ?: 0
+        else -> 0
     }
 }

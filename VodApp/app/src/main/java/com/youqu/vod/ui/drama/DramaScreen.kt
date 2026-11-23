@@ -65,7 +65,7 @@ fun DramaScreen(
     Column(
         modifier = modifier.fillMaxSize().background(OledBlack)
     ) {
-        SimpleTopBar(title = "短剧", actions = { com.youqu.vod.duanju.CoreDiagAction() })
+        SimpleTopBar(title = "短剧")
 
         SearchField(
             value = keyword,
@@ -126,7 +126,10 @@ fun DramaScreen(
                         gridItemsIndexed(page.list) { index, item ->
                             DramaCard(
                                 item = item,
-                                coverUrl = GatewayUrls.image(baseUrl, item.cover.orEmpty()),
+                                coverUrl = item.cover.orEmpty().let { c ->
+                                    if (c.startsWith("http", ignoreCase = true)) c
+                                    else GatewayUrls.image(baseUrl, c)
+                                },
                                 onClick = { onDramaClick(item) }
                             )
                             if (index == page.list.size - 1 && page.more) {

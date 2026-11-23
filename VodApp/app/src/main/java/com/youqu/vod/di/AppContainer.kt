@@ -8,6 +8,7 @@ import com.youqu.vod.data.repo.DomainRepository
 import com.youqu.vod.data.repo.DramaRepository
 import com.youqu.vod.data.repo.UpdateRepository
 import com.youqu.vod.data.repo.VodRepository
+import com.youqu.vod.duanju.ModuleDramaRepository
 import com.youqu.vod.update.ApkDownloader
 
 /**
@@ -20,6 +21,8 @@ class AppContainer(context: Context) {
     val settings: SettingsRepository
     val repository: VodRepository
     val dramaRepository: DramaRepository
+    /** 红果短剧模块仓库（Go 核心）。短剧专区专用，与影视/hezi1 隔离 */
+    val moduleDramaRepository: ModuleDramaRepository
     val updateRepository: UpdateRepository
     val apkDownloader: ApkDownloader
     val domainRepository: DomainRepository
@@ -36,6 +39,7 @@ class AppContainer(context: Context) {
         domainRepository = DomainRepository(settings, HttpFactory.createDownloadOkHttp())
         repository = VodRepository(api, settings, domainRepository)
         dramaRepository = DramaRepository(api, settings, domainRepository)
+        moduleDramaRepository = ModuleDramaRepository(appContext)
         updateRepository = UpdateRepository(appContext, settings, HttpFactory.createDownloadOkHttp())
         apkDownloader = ApkDownloader(appContext, HttpFactory.createDownloadOkHttp())
     }
