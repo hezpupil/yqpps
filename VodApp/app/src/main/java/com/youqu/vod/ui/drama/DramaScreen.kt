@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -60,12 +61,29 @@ fun DramaScreen(
     onRetry: () -> Unit,
     onLoadMore: () -> Unit,
     onDramaClick: (DramaItem) -> Unit,
+    onModulesClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
         modifier = modifier.fillMaxSize().background(OledBlack)
     ) {
-        SimpleTopBar(title = "短剧")
+        SimpleTopBar(
+            title = "短剧",
+            actions = {
+                Surface(
+                    onClick = onModulesClick,
+                    color = SurfaceDark2,
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text(
+                        text = "模块",
+                        color = AccentOrange,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                    )
+                }
+            }
+        )
 
         SearchField(
             value = keyword,
