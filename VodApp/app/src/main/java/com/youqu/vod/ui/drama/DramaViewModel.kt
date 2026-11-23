@@ -41,27 +41,23 @@ class DramaViewModel(
 
     fun load() {
         page = 1
-        viewModelScope.launch {
-            launch { loadPage(1) }
-            if (keyword.isEmpty()) {
-                launch {
-                    _hot.value = UiState.Loading
-                    _hot.value = try {
-                        when (val r = repository.hotWords()) {
-                            is ApiResult.Ok -> UiState.Success(r.value)
-                            is ApiResult.Err -> UiState.Error(r.message)
-                        }
-                    } catch (t: Throwable) {
-                        UiState.Error("热搜加载失败：${t.message ?: "未知错误"}")
-                    }
-                }
-            }
-        }
+        viewModelScope.launch { loadPage(1) }
     }
 
     /** 执行搜索：切换关键词并重新加载 */
     fun search(kw: String) {
         keyword = kw.trim()
+        load()
+    }
+
+    /**
+     * 手动刷新：回到默认列表并强制重新拉取。
+     * 切换模块后 ModuleDramaRepository 的生效源会变，但 ViewModel 实例被导航复用，
+     * 需要显式重载；同时清掉详情缓存，避免旧模块的详情串到新模块。
+     */
+    fun refresh() {
+        keyword = ""
+        repository.clearDetailCache()
         load()
     }
 
