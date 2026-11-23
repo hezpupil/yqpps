@@ -24,7 +24,7 @@ import "duanjuapp/native/core"
 
 //export Java_com_youqu_vod_duanju_NativeCore_nativeRequest
 func Java_com_youqu_vod_duanju_NativeCore_nativeRequest(env *C.JNIEnv, clazz C.jclass, input C.jstring) C.jstring {
-	if input == nil {
+	if input == 0 {
 		return C.yqNewString(env, C.CString(`{"ok":false,"error":"请求为空"}`))
 	}
 	cstr := C.yqGetString(env, input)
