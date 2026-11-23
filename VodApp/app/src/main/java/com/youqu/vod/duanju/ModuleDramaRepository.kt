@@ -22,6 +22,9 @@ class ModuleDramaRepository(private val context: Context) {
     /** 首页默认分类：真人短剧。空串表示混合推荐 */
     private val homeCategory = "short_play"
 
+    /** 详情页与播放页共用同一份详情，避免进入播放页时重复请求详情造成卡顿 */
+    private val detailCache = LinkedHashMap<String, DramaDetailData>()
+
     init {
         NativeCore.initialize(context)
     }
@@ -51,10 +54,22 @@ class ModuleDramaRepository(private val context: Context) {
     }.map { d -> parseCategories(d) }
 
     /** 详情：drama + chapters。chapters 的 videoUrl 为内部 scheme，需 resolve */
-    suspend fun detail(id: String): ApiResult<DramaDetailData> = call {
-        put("action", "detail")
-        put("drama", JSONObject().put("id", id))
-    }.map { d -> parseDetail(d, id) }
+    suspend fun detail(id: String): ApiResult<DramaDetailData> {
+        synchronized(detailCache) { detailCache[id] }?.let { return ApiResult.Ok(it) }
+        return call {
+            put("action", "detail")
+            put("drama", JSONObject().put("id", id))
+        }.map { d ->
+            parseDetail(d, id).also { parsed ->
+                if (parsed.eps.orEmpty().isNotEmpty()) {
+                    synchronized(detailCache) {
+                        if (detailCache.size >= 20) detailCache.clear()
+                        detailCache[id] = parsed
+                    }
+                }
+            }
+        }
+    }
 
     /**
      * 解析真实播放 URL。
@@ -71,9 +86,18 @@ class ModuleDramaRepository(private val context: Context) {
         .let { result ->
             when (result) {
                 is ApiResult.Ok -> if (result.value.isBlank()) ApiResult.Err("未返回播放地址") else result
-                is ApiResult.Err -> result
+                is ApiResult.Err -> ApiResult.Err(friendlyResolveError(result.message))
             }
         }
+
+    /** 红果私有取流接口近期频繁被封，把冗长技术错误收敛成可行动的提示 */
+    private fun friendlyResolveError(raw: String): String = when {
+        raw.contains("接口未返回有效数据") || raw.contains("未提供公开播放地址") ->
+            "红果上游取流接口暂时不可用（官方近期频繁封禁），当前仅前几集试看可播，请稍后重试或切换其他短剧源"
+        raw.contains("HTTP 404") ->
+            "红果上游播放地址已失效，请稍后重试或切换其他短剧源"
+        else -> raw
+    }
 
     /* ---------- 解析 ---------- */
 
