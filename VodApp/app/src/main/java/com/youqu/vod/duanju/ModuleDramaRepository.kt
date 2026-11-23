@@ -25,6 +25,9 @@ class ModuleDramaRepository(
     private val homeCategory = "short_play"
     private val noModuleHint = "尚未安装或启用任何短剧模块，请到短剧页右上角「模块」安装并启用"
 
+    /** 切换模块/手动刷新时清空详情缓存，避免旧源详情串到新源 */
+    fun clearDetailCache() = synchronized(detailCache) { detailCache.clear() }
+
     /** 详情页与播放页共用同一份详情，避免进入播放页时重复请求详情造成卡顿 */
     private val detailCache = LinkedHashMap<String, DramaDetailData>()
 
