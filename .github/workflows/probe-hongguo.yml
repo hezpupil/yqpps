@@ -65,3 +65,28 @@ jobs:
           timeout 120 /tmp/moduletool ./modules/huangguoai \
             '{"action":"rankings","source":"huangguoai","board":"huangguo-hot","page":1}' 2>&1 | head -c 2500
           echo ""
+
+      - name: 【红果】detail + resolve 全链路（数据层切换决策）
+        working-directory: guoapp/native
+        continue-on-error: true
+        run: |
+          CAT=$(timeout 150 /tmp/moduletool ./modules/hongguo \
+            '{"action":"catalog","source":"hongguo","category":"short_play","page":1}' 2>/dev/null | tail -1)
+          ID=$(echo "$CAT" | jq -r '.data.items[0].id // empty')
+          TITLE=$(echo "$CAT" | jq -r '.data.items[0].title // empty')
+          echo "剧集: $TITLE / ID: $ID"
+          DETAIL=$(timeout 150 /tmp/moduletool ./modules/hongguo \
+            "{\"action\":\"detail\",\"drama\":{\"id\":\"$ID\"}}" 2>/dev/null | tail -1)
+          echo "=== DETAIL 摘要 ==="
+          echo "$DETAIL" | head -c 1200
+          echo ""
+          CH0=$(echo "$DETAIL" | jq -c '.data.chapters[0] // empty')
+          DRAMA=$(echo "$DETAIL" | jq -c '.data.drama // {}')
+          echo "=== CHAPTER0 ==="
+          echo "$CH0" | head -c 600
+          echo ""
+          echo "=== RESOLVE 全返回（url/headers/key）==="
+          timeout 150 /tmp/moduletool ./modules/hongguo \
+            "{\"action\":\"resolve\",\"drama\":$DRAMA,\"chapter\":$CH0,\"index\":0}" 2>/dev/null \
+            | tail -1 | head -c 2000
+          echo ""
