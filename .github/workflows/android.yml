@@ -18,18 +18,15 @@ jobs:
       - name: 定位 Android NDK
         id: ndk
         run: |
-          # 优先用镜像预装 NDK，找不到再下载 r28c
-          CAND=$(find /usr/local/lib/android/sdk/ndk -maxdepth 3 -type f \
-                 -path '*/llvm/prebuilt/linux-x86_64/bin/clang' 2>/dev/null | sort -V | tail -1)
-          if [ -z "$CAND" ]; then
-            d="$RUNNER_TEMP/ndk"; mkdir -p "$d" "$RUNNER_TEMP/ndk-tmp"
-            curl -sSL -o /tmp/ndk.zip https://dl.google.com/android/repository/android-ndk-r28c-linux.zip
-            unzip -q /tmp/ndk.zip -d "$RUNNER_TEMP/ndk-tmp"
-            EX=$(find "$RUNNER_TEMP/ndk-tmp" -maxdepth 1 -type d -name 'android-ndk-*' | head -1)
-            mv "$EX" "$d/r28c"
-            CAND=$(find "$d" -maxdepth 3 -type f -path '*/llvm/prebuilt/linux-x86_64/bin/clang' | head -1)
-          fi
-          NDK_ROOT=$(echo "$CAND" | sed 's#/toolchains/llvm/prebuilt/linux-x86_64/bin/clang##')
+          # 与 native-build.yml 一致：直接下载 r28c，避免镜像预装版本不确定
+          NDK_ROOT="$RUNNER_TEMP/android-sdk/ndk/28.2.13676358"
+          mkdir -p "$RUNNER_TEMP/android-sdk/ndk" "$RUNNER_TEMP/ndk-tmp"
+          curl -sSL -o /tmp/ndk.zip https://dl.google.com/android/repository/android-ndk-r28c-linux.zip
+          unzip -q /tmp/ndk.zip -d "$RUNNER_TEMP/ndk-tmp"
+          EX=$(find "$RUNNER_TEMP/ndk-tmp" -maxdepth 1 -type d -name 'android-ndk-*' | head -1)
+          mv "$EX" "$NDK_ROOT"
+          CLANG="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
+          test -x "$CLANG" || { echo "::error::NDK clang 不存在: $CLANG"; exit 1; }
           echo "root=$NDK_ROOT" >> "$GITHUB_OUTPUT"
           echo "NDK root: $NDK_ROOT"
       - name: 编译 Go 核心 (arm64-v8a + armeabi-v7a)
