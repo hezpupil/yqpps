@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
@@ -200,9 +201,17 @@ fun AppNavHost() {
                 val vm: DramaViewModel = viewModel(factory = viewModelFactory {
                     DramaViewModel(app.container.moduleDramaRepository)
                 })
+                // 从模块管理页返回时，若源有变化才重新拉数据，否则直接用现有列表（切页即进）
+                LifecycleResumeEffect(Unit) {
+                    vm.syncIfSourceChanged()
+                    onPauseOrDispose { }
+                }
                 DramaScreen(
                     listState = vm.list.collectAsStateWithLifecycle().value,
                     keyword = keyword,
+                    currentSource = vm.currentSource.collectAsStateWithLifecycle().value,
+                    currentSourceId = vm.currentSourceId.collectAsStateWithLifecycle().value,
+                    sources = vm.sources.collectAsStateWithLifecycle().value,
                     onKeywordChange = { keyword = it },
                     onSearch = { kw ->
                         app.container.settings.addHistory(kw)
@@ -211,6 +220,7 @@ fun AppNavHost() {
                     onRefresh = { keyword = ""; vm.refresh() },
                     onRetry = vm::load,
                     onLoadMore = vm::loadMore,
+                    onSwitchSource = vm::switchSource,
                     onDramaClick = { item -> navController.navigateToDramaDetail(item.id?.toString().orEmpty()) },
                     onModulesClick = { navController.navigate(ROUTE_MODULES) }
                 )
@@ -254,7 +264,11 @@ fun AppNavHost() {
                 val vm: ModulesViewModel = viewModel(factory = viewModelFactory {
                     ModulesViewModel(app.container.moduleRepository, app.container.modulePreferences, appContext)
                 })
-                ModulesScreen(vm = vm, onBack = { navController.popBackStack() })
+                ModulesScreen(vm = vm, onBack = {
+                    // 装卸 / 启用 / 默认源可能已变化：让短剧页回来后按新源重载
+                    app.container.moduleDramaRepository.bumpSourceRevision()
+                    navController.popBackStack()
+                })
             }
 
             composable(
@@ -335,6 +349,9 @@ fun AppNavHost() {
                 DramaScreen(
                     listState = vm.list.collectAsStateWithLifecycle().value,
                     keyword = keyword,
+                    currentSource = vm.currentSource.collectAsStateWithLifecycle().value,
+                    currentSourceId = vm.currentSourceId.collectAsStateWithLifecycle().value,
+                    sources = vm.sources.collectAsStateWithLifecycle().value,
                     onKeywordChange = { keyword = it },
                     onSearch = { newKw ->
                         if (newKw.isNotBlank()) {
@@ -345,6 +362,7 @@ fun AppNavHost() {
                     onRefresh = { keyword = ""; vm.refresh() },
                     onRetry = vm::load,
                     onLoadMore = vm::loadMore,
+                    onSwitchSource = vm::switchSource,
                     onDramaClick = { item -> navController.navigateToDramaDetail(item.id?.toString().orEmpty()) },
                     onModulesClick = { navController.navigate(ROUTE_MODULES) }
                 )
