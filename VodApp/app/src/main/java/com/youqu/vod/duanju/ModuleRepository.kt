@@ -11,10 +11,16 @@ import org.json.JSONObject
  * 短剧模块管理仓库：直接复用 Go 核心已有的 5 个 action，
  * modules / moduleIndex / prepareModule / installModule / uninstallModule。
  */
-class ModuleRepository(context: Context) {
+class ModuleRepository(private val context: Context) {
 
-    init {
+    /** 初始化推迟到 IO 线程的首次调用，避免占用 App 启动主线程 */
+    @Volatile
+    private var coreReady = false
+
+    private fun ensureCore() {
+        if (coreReady) return
         NativeCore.initialize(context)
+        coreReady = true
     }
 
     /** 已安装模块。注意：modules() 返回的条目天然都是已安装，installed 字段为默认值 false。 */
@@ -86,7 +92,10 @@ class ModuleRepository(context: Context) {
     }
 
     private suspend fun <T> io(block: suspend () -> ApiResult<T>): ApiResult<T> =
-        withContext(Dispatchers.IO) { block() }
+        withContext(Dispatchers.IO) {
+            ensureCore()
+            block()
+        }
 
     private fun nativeCall(build: JSONObject.() -> Unit): ApiResult<JSONObject?> =
         when (val r = NativeCore.call(build)) {
