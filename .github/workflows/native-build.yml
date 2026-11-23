@@ -34,7 +34,10 @@ jobs:
           GOPROXY: https://goproxy.cn,direct
           GOSUMDB: 'off'
         run: |
-          CC="${{ steps.ndk.outputs.ndk }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
+          NDK="${{ steps.ndk.outputs.ndk }}"
+          export CC="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
+          export CGO_CFLAGS="--target=aarch64-linux-android24 -I$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include"
+          export CGO_LDFLAGS="--target=aarch64-linux-android24 -Wl,-z,max-page-size=16384"
           set +e
           go build -trimpath -buildmode=c-shared -ldflags='-s -w' \
             -o ../VodApp/app/src/main/jniLibs/arm64-v8a/libyouqu_duanju.so ./bridge 2>&1 | tee /tmp/build64.log
@@ -52,7 +55,10 @@ jobs:
           GOPROXY: https://goproxy.cn,direct
           GOSUMDB: 'off'
         run: |
-          CC="${{ steps.ndk.outputs.ndk }}/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi24-clang"
+          NDK="${{ steps.ndk.outputs.ndk }}"
+          export CC="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
+          export CGO_CFLAGS="--target=armv7a-linux-androideabi24 -I$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include"
+          export CGO_LDFLAGS="--target=armv7a-linux-androideabi24 -Wl,-z,max-page-size=16384"
           go build -trimpath -buildmode=c-shared -ldflags='-s -w' \
             -o ../VodApp/app/src/main/jniLibs/armeabi-v7a/libyouqu_duanju.so ./bridge
       - name: 上传 .so
@@ -63,7 +69,7 @@ jobs:
           retention-days: 7
 
   build-ios:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
